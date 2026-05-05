@@ -2,6 +2,8 @@ import disnake
 from disnake.ext import commands
 import firebase_admin
 from firebase_admin import credentials, db
+from threading import Thread
+from server import run_web
 import os
 import json
 
@@ -115,5 +117,7 @@ async def on_ready():
 async def setup(ctx):
     emb = disnake.Embed(title="🏪 SECXION STORE", description="เลือกบริการด้านล่างนี้", color=0x2b2d31)
     await ctx.send(embed=emb, view=MainStoreView())
-
+if __name__ == "__main__":
+    Thread(target=run_web).start() # เริ่มรัน Flask
+    bot.run(TOKEN) # เริ่มรัน Discord Bot
 bot.run(TOKEN)
