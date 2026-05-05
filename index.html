@@ -3,60 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SECXION STOCK MANAGER</title>
+    <title>SECXION BULK STOCK</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #1a1a1a; color: white; }
-        .card { background-color: #2d2d2d; border: none; color: white; }
-        .form-control { background-color: #3d3d3d; border: 1px solid #555; color: white; }
-        .form-control:focus { background-color: #444; color: white; }
+        body { background-color: #0f0f0f; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { background-color: #1a1a1a; border: 1px solid #333; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .form-control, .form-select { background-color: #252525; border: 1px solid #444; color: white; }
+        .form-control:focus { background-color: #2d2d2d; color: white; border-color: #0d6efd; box-shadow: none; }
+        .btn-primary { background: linear-gradient(45deg, #0d6efd, #0043a8); border: none; font-weight: bold; }
+        .badge-count { font-size: 0.8rem; vertical-align: middle; }
     </style>
 </head>
 <body class="container py-5">
-    <h2 class="mb-4 text-primary">📦 SECXION Stock Manager</h2>
-    
-    <div class="row">
-        <!-- ฝั่งเพิ่มของ -->
-        <div class="col-md-5 mb-4">
-            <div class="card p-4">
-                <h4>➕ เพิ่มสินค้าเข้าสต็อก</h4>
-                <form action="/add_stock" method="POST">
-                    <div class="mb-3">
-                        <label class="form-label">ประเภทสินค้า</label>
-                        <select name="type" class="form-control">
-                            <option value="netflix">Netflix</option>
-                            <option value="youtube">YouTube</option>
-                        </select>
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <h2 class="mb-4 text-center text-primary">📦 SECXION BULK MANAGER</h2>
+            
+            <div class="row">
+                <!-- ฝั่งเพิ่มของแบบ Bulk -->
+                <div class="col-md-7 mb-4">
+                    <div class="card p-4">
+                        <h4 class="mb-3">➕ เพิ่มสินค้า (Bulk Add)</h4>
+                        <form action="/add_stock" method="POST">
+                            <div class="mb-3">
+                                <label class="form-label">ประเภทสินค้า</label>
+                                <select name="type" class="form-select">
+                                    <option value="netflix">Netflix</option>
+                                    <option value="youtube">YouTube</option>
+                                    <option value="disney">Disney+</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">รายละเอียดสินค้า (1 บรรทัด = 1 ชิ้น)</label>
+                                <textarea name="detail" class="form-control" rows="12" placeholder="user1:pass1&#10;user2:pass2&#10;user3:pass3" required></textarea>
+                                <div class="form-text text-muted">ก๊อปวางได้เลย ระบบจะแยกบรรทัดให้เอง</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 py-2">บันทึกข้อมูลเข้าระบบ</button>
+                        </form>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">รายละเอียดสินค้า (เช่น เมล:พาส)</label>
-                        <textarea name="detail" class="form-control" rows="3" required></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">บันทึกลงสต็อก</button>
-                </form>
-            </div>
-        </div>
+                </div>
 
-        <!-- ฝั่งดูสต็อกปัจจุบัน -->
-        <div class="col-md-7">
-            <div class="card p-4">
-                <h4>📊 สต็อกปัจจุบัน</h4>
-                <table class="table table-dark table-striped mt-3">
-                    <thead>
-                        <tr>
-                            <th>ประเภท</th>
-                            <th>จำนวนคงเหลือ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for type, items in stocks.items() %}
-                        <tr>
-                            <td>{{ type.upper() }}</td>
-                            <td>{{ items|length }} ชิ้น</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <!-- ฝั่งโชว์สถานะสต็อก -->
+                <div class="col-md-5">
+                    <div class="card p-4">
+                        <h4 class="mb-3">📊 สต็อกปัจจุบัน</h4>
+                        <div class="list-group list-group-flush">
+                            {% for type, items in stocks.items() %}
+                            <div class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center border-secondary">
+                                <span>{{ type.upper() }}</span>
+                                <span class="badge bg-primary rounded-pill">{{ items|length if items is mapping else 0 }} ชิ้น</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
