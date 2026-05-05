@@ -9,7 +9,7 @@ import json
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
-ADMIN_LOG_ID = 123456789012345678 # <<< เปลี่ยนเป็น ID ห้องแอดมินของมึง
+ADMIN_LOG_ID = 1496076202509598720 # <<< เปลี่ยนเป็น ID ห้องแอดมินของมึง
 
 # เชื่อมต่อ Firebase
 try:
