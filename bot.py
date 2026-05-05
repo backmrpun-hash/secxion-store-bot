@@ -12,7 +12,6 @@ DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 ADMIN_LOG_ID = 1496076202509598720 
 
-# เชื่อมต่อ Firebase
 try:
     if not firebase_admin._apps:
         cred = credentials.Certificate(json.loads(FB_CONF))
@@ -45,7 +44,7 @@ class TopupModal(disnake.ui.Modal):
         
         view = AdminApproveView(inter.author.id, amt)
         await channel.send(embed=emb, view=view)
-        await inter.response.send_message("✅ ส่งข้อมูลให้แอดมินแล้ว กรุณารอตรวจสอบ", ephemeral=True)
+        await inter.response.send_message("✅ ส่งข้อมูลให้แอดมินแล้ว", ephemeral=True)
 
 class AdminApproveView(disnake.ui.View):
     def __init__(self, user_id, amount):
@@ -75,12 +74,12 @@ class MainStoreView(disnake.ui.View):
             real_items = [k for k in items.keys() if k != '_init']
             count = len(real_items)
             if count > 0:
-                options.append(disnake.SelectOption(label=cat_name.upper(), value=cat_name, description=f"คงเหลือ {count} ชิ้น | ราคา 50 บาท"))
+                options.append(disnake.SelectOption(label=cat_name.upper(), value=cat_name, description=f"คงเหลือ {count} ชิ้น"))
 
         if not options:
             options = [disnake.SelectOption(label="ขณะนี้ไม่มีสินค้าในสต็อก", value="none")]
 
-        select = disnake.ui.Select(placeholder="🛒 เลือกหมวดหมู่สินค้าที่ต้องการซื้อ", custom_id="dynamic_shop_select", options=options)
+        select = disnake.ui.Select(placeholder="🛒 เลือกหมวดหมู่สินค้า", custom_id="dynamic_shop_select", options=options)
         select.callback = self.shop_callback
         self.clear_items()
         self.add_item(disnake.ui.Button(label="💎 เติมเงิน", style=disnake.ButtonStyle.green, custom_id="btn_topup"))
@@ -89,7 +88,7 @@ class MainStoreView(disnake.ui.View):
     async def shop_callback(self, inter: disnake.MessageInteraction):
         itype = inter.values[0]
         if itype == "none":
-            return await inter.response.send_message("❌ ของหมดครับพี่ชาย", ephemeral=True)
+            return await inter.response.send_message("❌ ของหมด", ephemeral=True)
 
         price = 50 
         udata = ref.child(f'users/{inter.author.id}').get()
@@ -98,9 +97,9 @@ class MainStoreView(disnake.ui.View):
         real_items = {k: v for k, v in stocks.items() if k != '_init'}
 
         if not real_items:
-            return await inter.response.send_message("❌ ของหมดกระทันหัน!", ephemeral=True)
+            return await inter.response.send_message("❌ ของหมด!", ephemeral=True)
         if bal < price:
-            return await inter.response.send_message(f"❌ เงินไม่พอ!", ephemeral=True)
+            return await inter.response.send_message("❌ เงินไม่พอ!", ephemeral=True)
 
         iid = list(real_items.keys())[0]
         detail = str(real_items[iid])
@@ -108,17 +107,19 @@ class MainStoreView(disnake.ui.View):
         ref.child(f'users/{inter.author.id}').update({'balance': bal - price})
         ref.child(f'stocks/{itype}/{iid}').delete()
 
-        # --- แก้ไขบรรทัดเจ้าปัญหาให้จบในบรรทัดเดียว ป้องกัน Error ---
+        # --- แก้ไขแบบล้างบาง Error: เลิกใช้ f-string ซับซ้อนในจุดนี้ ---
         try:
+            content = "```\n" + detail + "\n
+```"
             embed_dm = disnake.Embed(title="📦 รายการสั่งซื้อสำเร็จ!", color=0x00ff00)
             embed_dm.add_field(name="หมวดหมู่", value=itype.upper(), inline=True)
-            embed_dm.add_field(name="สินค้า", value=f"```\n{detail}\n
-```", inline=False)
+            embed_dm.add_field(name="สินค้า", value=content, inline=False)
             embed_dm.set_footer(text="SECXION STORE")
+            
             await inter.author.send(embed=embed_dm)
-            msg = "✅ ซื้อสำเร็จ! บอทส่งของให้ใน DM แล้วครับ"
+            msg = "✅ ซื้อสำเร็จ! ส่งของเข้า DM แล้ว"
         except Exception:
-            msg = f"⚠️ บอททัก DM มึงไม่ได้! นี่คือของของมึง: {detail}"
+            msg = "⚠️ บอททัก DM ไม่ได้! ของคือ: " + detail
 
         await inter.response.send_message(msg, ephemeral=True)
         self.create_menu()
