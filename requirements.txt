@@ -1,3 +1,4 @@
 disnake
 firebase-admin
 aiohttp
+flask
