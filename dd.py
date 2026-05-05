@@ -105,19 +105,13 @@ class MainStoreView(disnake.ui.View):
         ref.child(user_path).update({'balance': bal - price})
         ref.child('stocks/' + itype + '/' + iid).delete()
 
-        # --- วิธีแก้แบบกำปั้นทุบดินที่ไม่มีวันพัง ---
+        # --- แก้ไขแบบล้างบาง Error: เลิกพิมพ์เครื่องหมายพิเศษลงในสตริงตรงๆ ---
         try:
-            # 1. ประกาศตัวแปรแยกบรรทัดกันให้เด็ดขาด
-            # 2. ใช้ chr(96) แทนเครื่องหมาย backtick (`) และ chr(10) แทน Enter
-            b = chr(96) * 3
-            n = chr(10)
-            
-            # 3. ต่อข้อความโดยไม่ใช้ f-string หรือเครื่องหมายพิเศษ
-            code_block = b
-            code_block += n
-            code_block += detail
-            code_block += n
-            code_block += b
+            # ใช้ List join แทนการพิมพ์สตริงต่อกัน เพื่อเลี่ยงปัญหาการตัดบรรทัดแล้ว Syntax หลุด
+            bt = chr(96) * 3  # สร้าง ```
+            nl = chr(10)      # สร้าง Enter
+            msg_parts = [bt, nl, detail, nl, bt]
+            code_block = "".join(msg_parts)
             
             embed_dm = disnake.Embed(title='📦 ซื้อสินค้าสำเร็จ', color=0x00ff00)
             embed_dm.add_field(name='สินค้า', value=code_block, inline=False)
