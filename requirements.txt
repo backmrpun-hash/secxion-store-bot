@@ -1,6 +1,3 @@
 disnake
 firebase-admin
 requests
-pyzbar
-Pillow
-numpy
