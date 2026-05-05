@@ -13,7 +13,7 @@ SETUP_CHANNEL_ID = 1501239836516946061
 SLIPGO_KEY = "Gg119bHeRI8dksTQuuHEAkEZHK9+9PQ_4Opmkz469SQ="
 SLIPGO_API = "https://api.slip2go.com/api/verify-slip/image"
 
-PROMPTPAY_ID = "0812345678"
+PROMPTPAY_ID = "0655292340"
 
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
