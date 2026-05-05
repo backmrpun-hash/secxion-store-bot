@@ -5,7 +5,7 @@ from firebase_admin import credentials, db
 import os
 import json
 
-# --- 1. ตั้งค่า Firebase ---
+# --- 1. SETUP FIREBASE ---
 FIREBASE_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 firebase_config_raw = os.getenv("FIREBASE_CONFIG")
 
@@ -24,13 +24,14 @@ def get_user_balance(user_id):
         return data.get('balance', 0) if data else 0
     except: return 0
 
+# --- 2. SHOP SYSTEM ---
 class ShopView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @disnake.ui.select(
         placeholder="🛒 เลือกสินค้า",
-        custom_id="shop_v5",
+        custom_id="secxion_shop_vFinal",
         options=[
             disnake.SelectOption(label="Netflix", value="netflix"),
             disnake.SelectOption(label="YouTube", value="youtube")
@@ -39,45 +40,52 @@ class ShopView(disnake.ui.View):
     async def buy_callback(self, select: disnake.ui.Select, inter: disnake.MessageInteraction):
         item_type = select.values[0]
         user_id = str(inter.author.id)
+        
+        # ตั้งค่าราคา
         prices = {"netflix": 50, "youtube": 30}
         price = prices.get(item_type, 999)
         
-        bal = get_user_balance(user_id)
+        balance = get_user_balance(user_id)
         stocks = ref.child(f'stocks/{item_type}').get()
         
-        if not stocks or bal < price:
+        if not stocks or balance < price:
             return await inter.response.send_message("❌ สินค้าหมดหรือเงินไม่พอ", ephemeral=True)
 
+        # ดึงของชิ้นแรก
         item_id = list(stocks.keys())[0]
         item_detail = str(stocks[item_id])
 
-        ref.child(f'users/{user_id}').update({'balance': bal - price})
+        # อัปเดต Database
+        ref.child(f'users/{user_id}').update({'balance': balance - price})
         ref.child(f'stocks/{item_type}/{item_id}').delete()
 
-        # --- แก้ไขแบบเด็ดขาด: ใช้ f-string บรรทัดเดียวจบ ไม่มีการตัดบรรทัด ---
-        res = f"```\n{item_detail}\n
+        # --- แก้ปัญหา SyntaxError ถาวร: ใช้ Format แบบปลอดภัยที่สุด ---
+        # ไม่ใช้ f-string, ไม่ใช้เครื่องหมายบวกซ้อนกัน
+        msg_template = "```\n{}\n
 ```"
+        success_msg = msg_template.format(item_detail)
         
-        embed = disnake.Embed(title="✅ สำเร็จ", description=res, color=0x00ff00)
-        await inter.response.send_message(embed=embed, ephemeral=True)
+        emb = disnake.Embed(title="✅ ซื้อสินค้าสำเร็จ", description=success_msg, color=0x00ff00)
+        await inter.response.send_message(embed=emb, ephemeral=True)
 
-    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.gray, custom_id="bal_v5")
+    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.gray, custom_id="check_bal_vFinal")
     async def bal_btn(self, button, inter):
         bal = get_user_balance(inter.author.id)
-        await inter.response.send_message(f"💎 เงิน: {bal} บาท", ephemeral=True)
+        await inter.response.send_message(f"💎 ยอดเงินปัจจุบัน: {bal} บาท", ephemeral=True)
 
+# --- 3. ADMIN & BOT SETUP ---
 class AdminView(disnake.ui.View):
     def __init__(self, cust_id):
         super().__init__(timeout=None)
         self.cust_id = cust_id
 
-    @disnake.ui.button(label="อนุมัติ", style=disnake.ButtonStyle.green)
+    @disnake.ui.button(label="อนุมัติเงิน", style=disnake.ButtonStyle.green)
     async def approve(self, button, inter):
         if not inter.author.guild_permissions.administrator: return
         await inter.response.send_modal(
             title="เติมเงิน",
             custom_id="modal_topup",
-            components=[disnake.ui.TextInput(label="จำนวน", custom_id="amt")]
+            components=[disnake.ui.TextInput(label="จำนวนเงิน", custom_id="amt")]
         )
 
 class SecxionBot(commands.Bot):
@@ -86,12 +94,12 @@ class SecxionBot(commands.Bot):
 
     async def on_ready(self):
         self.add_view(ShopView())
-        print(f"Bot Online")
+        print("✅ BOT READY")
 
     async def on_message(self, message):
         if message.author.bot: return
         if message.attachments:
-            emb = disnake.Embed(title="สลิป", description=f"ID:({message.author.id})", color=0xffff00)
+            emb = disnake.Embed(title="ตรวจสอบสลิป", description=f"ID:({message.author.id})", color=0xffff00)
             emb.set_image(url=message.attachments[0].url)
             await message.reply(embed=emb, view=AdminView(message.author.id))
         await self.process_commands(message)
@@ -99,16 +107,17 @@ class SecxionBot(commands.Bot):
     async def on_modal_submit(self, inter: disnake.ModalInteraction):
         if inter.custom_id == "modal_topup":
             amount = float(inter.text_values["amt"])
+            # ดึง ID ลูกค้าจาก Description
             raw_id = inter.message.embeds[0].description.split("(")[1].replace(")", "")
-            old = get_user_balance(raw_id)
-            ref.child(f'users/{raw_id}').update({'balance': old + amount})
-            await inter.response.send_message(f"✅ เติมเงินให้ {raw_id} แล้ว")
+            old_bal = get_user_balance(raw_id)
+            ref.child(f'users/{raw_id}').update({'balance': old_bal + amount})
+            await inter.response.send_message(f"✅ เติมเงินให้ {raw_id} แล้ว {amount} บาท")
 
 bot = SecxionBot()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    await ctx.send("🏪 **STORE**", view=ShopView())
+    await ctx.send("🏪 **SECXION STORE**", view=ShopView())
 
 bot.run(os.getenv("TOKEN"))
