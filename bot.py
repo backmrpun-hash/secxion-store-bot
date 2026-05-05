@@ -3,51 +3,35 @@ from disnake.ext import commands, tasks
 import firebase_admin
 from firebase_admin import credentials, db
 import requests, json, os
-from pyzbar.pyzbar import decode
-from PIL import Image
-from io import BytesIO
 
-# ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 SETUP_CHANNEL_ID = 1501239836516946061
 
-SLIPGO_KEY = "ใส่ KEY"
-SLIPGO_API = "https://api.slip2go.com/api/verify-slip/qr-code/info"
+SLIPGO_KEY = "Gg119bHeRI8dksTQuuHEAkEZHK9+9PQ_4Opmkz469SQ="
+SLIPGO_API = "https://api.slip2go.com/api/verify-slip/image"
 
 PROMPTPAY_ID = "0812345678"
 
-store_message_id = None
-
-# ===== BOT =====
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
-# ===== FIREBASE =====
 cred = credentials.Certificate(json.loads(FB_CONF))
 firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
 ref = db.reference("/")
 
-# ===== QR READ (ไม่ใช้ cv2 แล้ว) =====
-def read_qr_from_image(url):
-    response = requests.get(url)
-    img = Image.open(BytesIO(response.content))
+store_message_id = None
 
-    decoded = decode(img)
-    if not decoded:
-        return None
-
-    return decoded[0].data.decode("utf-8")
-
-# ===== VERIFY =====
-def verify_slip(qr_code):
+# ===== VERIFY (ส่งรูปไปเลย) =====
+def verify_slip_image(image_url):
     headers = {
-        "Authorization": f"Bearer {SLIPGO_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {SLIPGO_KEY}"
     }
 
-    data = {"payload": {"qrCode": qr_code}}
+    data = {
+        "imageUrl": image_url
+    }
 
     res = requests.post(SLIPGO_API, json=data, headers=headers)
 
@@ -57,7 +41,7 @@ def verify_slip(qr_code):
 
     return res.json()
 
-# ===== EMBED =====
+# ===== STORE =====
 def build_embed():
     stocks = ref.child("stocks").get() or {}
     text = ""
@@ -78,7 +62,6 @@ def build_embed():
     emb.add_field(name="📦 สินค้า", value=f"```{text}```", inline=False)
     return emb
 
-# ===== VIEW =====
 class StoreView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -140,7 +123,7 @@ async def topup(ctx, amount: int):
 
     await ctx.send(embed=emb)
 
-# ===== SLIP CHECK =====
+# ===== AUTO TOPUP =====
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -152,11 +135,7 @@ async def on_message(message):
 
                 await message.reply("⏳ กำลังตรวจสลิป...")
 
-                qr = read_qr_from_image(att.url)
-                if not qr:
-                    return await message.reply("❌ อ่าน QR ไม่ได้")
-
-                slip = verify_slip(qr)
+                slip = verify_slip_image(att.url)
                 if not slip:
                     return await message.reply("❌ ตรวจไม่ผ่าน")
 
@@ -197,7 +176,6 @@ async def on_ready():
     store_message_id = msg.id
     auto_update.start()
 
-# ===== LOOP =====
 @tasks.loop(seconds=5)
 async def auto_update():
     channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
@@ -205,5 +183,4 @@ async def auto_update():
 
     await msg.edit(embed=build_embed(), view=StoreView())
 
-# ===== RUN =====
 bot.run(TOKEN)
