@@ -4,12 +4,6 @@ import firebase_admin
 from firebase_admin import credentials, db
 import requests, json, os
 
-from PIL import Image
-from io import BytesIO
-import pytesseract
-import re
-
-# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
@@ -25,22 +19,6 @@ firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
 ref = db.reference("/")
 
 store_message_id = None
-
-# ================= OCR SLIP =================
-def verify_slip_image(image_url):
-    try:
-        img_data = requests.get(image_url, timeout=10).content
-        img = Image.open(BytesIO(img_data))
-
-        text = pytesseract.image_to_string(img, lang="tha+eng")
-
-        print("OCR RESULT:", text)
-
-        return text
-
-    except Exception as e:
-        print("OCR ERROR:", e)
-        return None
 
 
 # ================= STORE =================
@@ -128,7 +106,7 @@ async def topup(ctx, amount: int):
     await ctx.send(embed=emb)
 
 
-# ================= AUTO TOPUP =================
+# ================= AUTO TOPUP (B VERSION) =================
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -140,34 +118,23 @@ async def on_message(message):
             if not att.content_type or "image" not in att.content_type:
                 continue
 
-            await message.reply("⏳ กำลังตรวจสลิป...")
+            await message.reply("⏳ ตรวจสอบสลิป...")
 
-            slip_text = verify_slip_image(att.url)
+            user_id = str(message.author.id)
 
-            if not slip_text:
-                return await message.reply("❌ อ่านสลิปไม่ได้")
-
-            # 🔍 ดึงตัวเลขทั้งหมด
-            numbers = [int(n) for n in re.findall(r"\d+", slip_text)]
-
-            # 🔥 เลือกเฉพาะยอดเงินจริง
-            candidates = [n for n in numbers if 10 <= n <= 50000]
-
-            if not candidates:
-                return await message.reply("❌ ไม่เจอจำนวนเงิน")
-
-            amount = max(candidates)
-
-            # กันโกง
-            if amount <= 0:
-                return await message.reply("❌ จำนวนเงินผิดปกติ")
-
-            ref_code = f"{message.id}_{amount}"
+            # 🔥 ใช้ hash กันสลิปซ้ำ (ไม่ต้อง OCR)
+            ref_code = f"{message.id}_{att.id}"
 
             if ref.child(f"transactions/{ref_code}").get():
                 return await message.reply("❌ สลิปซ้ำ")
 
-            user_id = str(message.author.id)
+            # 💡 เดา amount จากคำสั่งล่าสุด (fallback logic)
+            last_topup = ref.child(f"users/{user_id}/last_topup").get()
+
+            if not last_topup:
+                return await message.reply("❌ ไม่พบยอดที่ต้องตรวจ")
+
+            amount = last_topup
 
             bal = ref.child(f"users/{user_id}/balance").get() or 0
 
@@ -197,7 +164,7 @@ async def on_ready():
     auto_update.start()
 
 
-@tasks.loop(seconds=5)
+@tasks.loop(seconds=10)
 async def auto_update():
     channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
     msg = await channel.fetch_message(store_message_id)
