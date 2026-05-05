@@ -8,7 +8,7 @@ import os
 # ตรวจสอบว่ามีไฟล์ serviceAccountKey.json ในโฟลเดอร์เดียวกับบอท
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {
-    'databaseURL': 'ใส่_Database_URL_ของคุณที่นี่' # หาได้จากหน้า Realtime Database ใน Firebase
+    'databaseURL': 'https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/' # หาได้จากหน้า Realtime Database ใน Firebase
 })
 
 ref = db.reference('/')
