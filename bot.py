@@ -3,15 +3,14 @@ from disnake.ext import commands
 import firebase_admin
 from firebase_admin import credentials, db
 from threading import Thread
-from server import run_web
 import os
 import json
 
-# --- 1. SETTINGS (ตั้งค่าตรงนี้) ---
+# --- 1. SETTINGS ---
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
-ADMIN_LOG_ID = 1496076202509598720 # <<< เปลี่ยนเป็น ID ห้องแอดมินของมึง
+ADMIN_LOG_ID = 1496076202509598720 
 
 # เชื่อมต่อ Firebase
 try:
@@ -22,7 +21,7 @@ try:
 except Exception as e:
     print(f"Firebase Error: {e}")
 
-# --- 2. MODAL & ADMIN SYSTEM ---
+# --- 2. UI CLASSES (MODAL & VIEWS) ---
 class TopupModal(disnake.ui.Modal):
     def __init__(self):
         components = [
@@ -34,7 +33,6 @@ class TopupModal(disnake.ui.Modal):
     async def callback(self, inter: disnake.ModalInteraction):
         amt = inter.text_values["amt"]
         time = inter.text_values["time"]
-        
         channel = inter.bot.get_channel(ADMIN_LOG_ID)
         if not channel:
             return await inter.response.send_message("❌ ไม่พบห้องแอดมิน!", ephemeral=True)
@@ -55,7 +53,7 @@ class AdminApproveView(disnake.ui.View):
         self.amount = float(amount)
 
     @disnake.ui.button(label="✅ อนุมัติ", style=disnake.ButtonStyle.green, custom_id="adm_app")
-    async def approve(self, button, inter):
+    async def approve(self, button, inter: disnake.MessageInteraction):
         if not inter.author.guild_permissions.administrator:
             return await inter.response.send_message("มึงไม่ใช่แอดมิน!", ephemeral=True)
             
@@ -65,7 +63,6 @@ class AdminApproveView(disnake.ui.View):
         await inter.response.send_message(f"✅ เติมเงินให้ <@{self.user_id}> สำเร็จ!")
         self.stop()
 
-# --- 3. SHOP SYSTEM ---
 class MainStoreView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -99,16 +96,13 @@ class MainStoreView(disnake.ui.View):
         ref.child(f'users/{inter.author.id}').update({'balance': bal - price})
         ref.child(f'stocks/{itype}/{iid}').delete()
 
-        # ป้องกัน Error ด้วยการใช้ String ธรรมดา
-        res_msg = "✅ ซื้อสำเร็จ!\nของคือ: " + detail
-        await inter.response.send_message(res_msg, ephemeral=True)
+        await inter.response.send_message(f"✅ ซื้อสำเร็จ!\nของคือ: {detail}", ephemeral=True)
 
-# --- 4. BOT CORE ---
+# --- 3. BOT CORE ---
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
 @bot.event
 async def on_ready():
-    # บรรทัดนี้สำคัญที่สุด เพื่อให้ปุ่มไม่พังเวลาบอทรีสตาร์ท
     bot.add_view(MainStoreView())
     print(f"🚀 {bot.user} ONLINE!")
 
@@ -117,7 +111,13 @@ async def on_ready():
 async def setup(ctx):
     emb = disnake.Embed(title="🏪 SECXION STORE", description="เลือกบริการด้านล่างนี้", color=0x2b2d31)
     await ctx.send(embed=emb, view=MainStoreView())
+
+# --- 4. RUNNING ---
 if __name__ == "__main__":
-    Thread(target=run_web).start() # เริ่มรัน Flask
-    bot.run(TOKEN) # เริ่มรัน Discord Bot
-bot.run(TOKEN)
+    from server import run_web
+    # รันเว็บแบบ Daemon เพื่อให้ปิดพร้อมบอท
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+    
+    bot.run(TOKEN)
