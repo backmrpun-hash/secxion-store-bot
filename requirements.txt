@@ -1,4 +1,6 @@
 disnake
 firebase-admin
-aiohttp
-flask
+requests
+opencv-python
+numpy
+pyzbar
