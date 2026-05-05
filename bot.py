@@ -10,7 +10,7 @@ import json
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
-ADMIN_LOG_ID = 1496076202509598720 
+ADMIN_LOG_ID = 1496076202509598720  # ID ห้องแอดมินสำหรับตรวจสลิป
 
 # เชื่อมต่อ Firebase
 try:
@@ -21,7 +21,7 @@ try:
 except Exception as e:
     print(f"Firebase Error: {e}")
 
-# --- 2. UI CLASSES ---
+# --- 2. UI CLASSES (MODAL & VIEWS) ---
 
 class TopupModal(disnake.ui.Modal):
     def __init__(self):
@@ -67,93 +67,78 @@ class AdminApproveView(disnake.ui.View):
 class MainStoreView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(disnake.ui.Button(label="💎 เติมเงิน", style=disnake.ButtonStyle.green, custom_id="btn_topup"))
-        self.create_select()
+        self.create_menu()
 
-    def create_select(self):
+    def create_menu(self):
         # ดึงหมวดหมู่จาก Firebase มาสร้างตัวเลือกอัตโนมัติ
         stocks_data = ref.child('stocks').get() or {}
         options = []
 
         for cat_name, items in stocks_data.items():
-            # กรองเอาเฉพาะหมวดหมู่ที่มีของจริงๆ (ไม่นับ _init)
-            real_items = [k for k in items.keys() if k != '_init']
+            # กรองข้อมูลสินค้าจริง (ไม่นับ _init)
+            real_items = [k for k in items.keys() if k != '_init'] if isinstance(items, dict) else []
             count = len(real_items)
             
             if count > 0:
-                # พยายามแยกราคาจากชื่อหมวดหมู่ (เช่น Netflix-50 จะได้ราคา 50)
-                price_tag = "50" # ราคาเริ่มต้นถ้าไม่ได้ตั้งชื่อแบบมีขีด
-                if "-" in cat_name:
-                    price_tag = cat_name.split("-")[-1]
-
                 options.append(disnake.SelectOption(
                     label=cat_name.upper(),
                     value=cat_name,
-                    description=f"ราคา {price_tag} บาท | คงเหลือ {count} ชิ้น"
+                    description=f"คงเหลือ {count} ชิ้น | ราคา 50 บาท"
                 ))
 
         if not options:
-            options = [disnake.SelectOption(label="ขณะนี้ไม่มีสินค้า", value="none")]
+            options = [disnake.SelectOption(label="ขณะนี้ไม่มีสินค้าในสต็อก", value="none")]
 
         select = disnake.ui.Select(
-            placeholder="🛒 เลือกสินค้าที่ต้องการซื้อ",
-            custom_id="shop_select_dynamic",
+            placeholder="🛒 เลือกหมวดหมู่สินค้าที่ต้องการซื้อ",
+            custom_id="dynamic_shop_select",
             options=options
         )
         select.callback = self.shop_callback
-        # ลบอันเก่าออกก่อนเพิ่มอันใหม่ (ถ้ามี)
-        for item in self.children:
-            if isinstance(item, disnake.ui.Select):
-                self.remove_item(item)
+        
+        self.clear_items()
+        self.add_item(disnake.ui.Button(label="💎 เติมเงิน", style=disnake.ButtonStyle.green, custom_id="btn_topup"))
         self.add_item(select)
 
     async def shop_callback(self, inter: disnake.MessageInteraction):
         itype = inter.values[0]
         if itype == "none":
-            return await inter.response.send_message("❌ ของหมดแล้วไอ้ชาย!", ephemeral=True)
+            return await inter.response.send_message("❌ ของหมดครับพี่ชาย รอแอดมินลงของนะ", ephemeral=True)
 
-        # คำนวณราคาจากชื่อหมวดหมู่
-        price = 50
-        if "-" in itype:
-            try: price = float(itype.split("-")[-1])
-            except: price = 50
-
+        price = 50 
+        
         udata = ref.child(f'users/{inter.author.id}').get()
         bal = udata.get('balance', 0) if udata else 0
         stocks = ref.child(f'stocks/{itype}').get() or {}
         
-        # กรองเอาเฉพาะข้อมูลสินค้า
         real_items = {k: v for k, v in stocks.items() if k != '_init'}
 
         if not real_items:
-            return await inter.response.send_message("❌ ของหมดกะทันหัน!", ephemeral=True)
+            return await inter.response.send_message("❌ ของหมดกระทันหัน!", ephemeral=True)
         if bal < price:
-            return await inter.response.send_message(f"❌ เงินไม่พอ! มึงมี {bal} บาท แต่ของราคา {price} บาท", ephemeral=True)
+            return await inter.response.send_message(f"❌ เงินไม่พอ! (มึงมี {bal} บาท แต่ของราคา {price} บาท)", ephemeral=True)
 
-        # ดึงของชิ้นแรกและลบออก
         iid = list(real_items.keys())[0]
         detail = str(real_items[iid])
 
         ref.child(f'users/{inter.author.id}').update({'balance': bal - price})
         ref.child(f'stocks/{itype}/{iid}').delete()
 
-        # --- ระบบส่งของเข้า DM ---
+        # --- แก้ไขบรรทัดที่เคยพัง (Syntax Error) ตรงนี้ครับ ---
         try:
-            dm_emb = disnake.Embed(title="🎁 รายการสั่งซื้อสำเร็จ", color=0x00ff00)
-            dm_emb.add_field(name="สินค้า", value=f"**{itype.upper()}**", inline=False)
-            # แบบที่ถูกต้อง
-embed_dm.add_field(name="ข้อมูลสินค้า / ลิงก์ดาวน์โหลด", value=f"```\n{detail}\n```", inline=False)
-            dm_emb.set_footer(text="SECXION STORE - ขอบคุณที่อุดหนุน")
+            embed_dm = disnake.Embed(title="📦 รายการสั่งซื้อสำเร็จ!", color=0x00ff00)
+            embed_dm.add_field(name="หมวดหมู่", value=itype.upper(), inline=True)
+            embed_dm.add_field(name="ข้อมูลสินค้า / ลิงก์ดาวน์โหลด", value=f"```\n{detail}\n
+```", inline=False)
+            embed_dm.set_footer(text="SECXION STORE - ขอบคุณที่อุดหนุนครับ")
             
-            await inter.author.send(embed=dm_emb)
-            msg = "✅ ซื้อสำเร็จ! เช็คของได้ที่แชทส่วนตัว (DM) เลย"
+            await inter.author.send(embed=embed_dm)
+            msg = "✅ ซื้อสำเร็จ! บอทส่งของให้ใน **แชทส่วนตัว (DM)** แล้วครับ"
         except disnake.Forbidden:
-            msg = f"⚠️ ซื้อสำเร็จ! แต่บอททักแชทมึงไม่ได้ (กรุณาเปิดรับข้อความจากคนแปลกหน้า)\n**ของคือ:** {detail}"
+            msg = f"⚠️ ซื้อสำเร็จ! แต่บอททักแชทมึงไม่ได้ (กรุณาเปิด DM)\n**ของคือ:** {detail}"
 
         await inter.response.send_message(msg, ephemeral=True)
-        
-        # อัปเดตเมนูใน Discord ทันที
-        self.create_select()
+        self.create_menu()
         await inter.edit_original_message(view=self)
 
 # --- 3. BOT CORE ---
@@ -162,17 +147,16 @@ bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 @bot.event
 async def on_ready():
     bot.add_view(MainStoreView())
-    print(f"🚀 {bot.user} ONLINE & DYNAMIC SYSTEM READY!")
+    print(f"🚀 {bot.user} ONLINE! ระบบพร้อมทำงาน")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
     emb = disnake.Embed(
         title="🏪 SECXION STORE", 
-        description="ยินดีต้อนรับ! เลือกซื้อสินค้าหรือเติมเงินได้ที่ปุ่มด้านล่าง", 
+        description="ยินดีต้อนรับ! เลือกเติมเงินหรือซื้อสินค้าได้จากเมนูด้านล่าง", 
         color=0x2b2d31
     )
-    emb.set_image(url="https://i.pinimg.com/originals/f3/e4/f3/f3e4f3f3f3f3f3f3f3f3f3f3f3f3f3f3.gif") # ใส่รูปให้สวยๆ
     await ctx.send(embed=emb, view=MainStoreView())
 
 # --- 4. RUNNING ---
@@ -181,5 +165,4 @@ if __name__ == "__main__":
     t = Thread(target=run_web)
     t.daemon = True
     t.start()
-    
     bot.run(TOKEN)
