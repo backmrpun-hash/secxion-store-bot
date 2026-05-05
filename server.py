@@ -18,12 +18,17 @@ def index():
 @app.route('/add_stock', methods=['POST'])
 def add_stock():
     item_type = request.form.get('type')
-    detail = request.form.get('detail')
+    raw_detail = request.form.get('detail')
     
-    if item_type and detail:
-        # ใช้ push() เพื่อสร้าง ID อัตโนมัติ ไม่ให้ข้อมูลทับกัน
-        db.reference(f'/stocks/{item_type}').push(detail)
-    
+    if item_type and raw_detail:
+        # แยกข้อมูลด้วยการขึ้นบรรทัดใหม่ และลบช่องว่างหัว-ท้ายบรรทัดออก
+        items = [line.strip() for line in raw_detail.split('\n') if line.strip()]
+        
+        # วนลูปส่งเข้า Firebase ทีละอัน
+        stock_ref = db.reference(f'/stocks/{item_type}')
+        for item in items:
+            stock_ref.push(item)
+            
     return redirect('/')
 
 def run_web():
