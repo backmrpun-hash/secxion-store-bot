@@ -15,9 +15,8 @@ try:
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
         ref = db.reference('/')
-        print("✅ Firebase Connected")
 except Exception as e:
-    print(f"❌ Firebase Error: {e}")
+    print(f"Firebase Error: {e}")
 
 def get_user_balance(user_id):
     try:
@@ -30,11 +29,11 @@ class ShopView(disnake.ui.View):
         super().__init__(timeout=None)
 
     @disnake.ui.select(
-        placeholder="🛒 เลือกสินค้าที่ต้องการซื้อ",
-        custom_id="secxion:shop_v4",
+        placeholder="🛒 เลือกสินค้า",
+        custom_id="shop_v5",
         options=[
-            disnake.SelectOption(label="Netflix Premium", value="netflix", emoji="🎬"),
-            disnake.SelectOption(label="YouTube Premium", value="youtube", emoji="📺")
+            disnake.SelectOption(label="Netflix", value="netflix"),
+            disnake.SelectOption(label="YouTube", value="youtube")
         ]
     )
     async def buy_callback(self, select: disnake.ui.Select, inter: disnake.MessageInteraction):
@@ -46,43 +45,39 @@ class ShopView(disnake.ui.View):
         bal = get_user_balance(user_id)
         stocks = ref.child(f'stocks/{item_type}').get()
         
-        if not stocks:
-            return await inter.response.send_message("❌ สินค้าหมด!", ephemeral=True)
-        if bal < price:
-            return await inter.response.send_message(f"❌ เงินไม่พอ (มี {bal} บาท)", ephemeral=True)
+        if not stocks or bal < price:
+            return await inter.response.send_message("❌ สินค้าหมดหรือเงินไม่พอ", ephemeral=True)
 
         item_id = list(stocks.keys())[0]
         item_detail = str(stocks[item_id])
 
-        # ตัดเงินและลบของ
         ref.child(f'users/{user_id}').update({'balance': bal - price})
         ref.child(f'stocks/{item_type}/{item_id}').delete()
 
-        # --- จุดที่เคย Error: แก้ไขโดยใช้การบวก String บรรทัดเดียว ---
-        display_text = "```" + item_detail + "
+        # --- แก้ไขแบบเด็ดขาด: ใช้ f-string บรรทัดเดียวจบ ไม่มีการตัดบรรทัด ---
+        res = f"```\n{item_detail}\n
 ```"
         
-        embed = disnake.Embed(title="✅ ซื้อสำเร็จ", color=0x00ff00)
-        embed.add_field(name="📦 สินค้าที่ได้รับ", value=display_text, inline=False)
+        embed = disnake.Embed(title="✅ สำเร็จ", description=res, color=0x00ff00)
         await inter.response.send_message(embed=embed, ephemeral=True)
 
-    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.gray, custom_id="secxion:bal_check_v4")
+    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.gray, custom_id="bal_v5")
     async def bal_btn(self, button, inter):
         bal = get_user_balance(inter.author.id)
-        await inter.response.send_message(f"💎 ยอดเงิน: **{bal}** บาท", ephemeral=True)
+        await inter.response.send_message(f"💎 เงิน: {bal} บาท", ephemeral=True)
 
 class AdminView(disnake.ui.View):
     def __init__(self, cust_id):
         super().__init__(timeout=None)
         self.cust_id = cust_id
 
-    @disnake.ui.button(label="อนุมัติเงิน", style=disnake.ButtonStyle.green)
+    @disnake.ui.button(label="อนุมัติ", style=disnake.ButtonStyle.green)
     async def approve(self, button, inter):
         if not inter.author.guild_permissions.administrator: return
         await inter.response.send_modal(
             title="เติมเงิน",
             custom_id="modal_topup",
-            components=[disnake.ui.TextInput(label="จำนวนเงิน", custom_id="amt")]
+            components=[disnake.ui.TextInput(label="จำนวน", custom_id="amt")]
         )
 
 class SecxionBot(commands.Bot):
@@ -91,7 +86,7 @@ class SecxionBot(commands.Bot):
 
     async def on_ready(self):
         self.add_view(ShopView())
-        print(f"✅ Bot Online")
+        print(f"Bot Online")
 
     async def on_message(self, message):
         if message.author.bot: return
@@ -107,13 +102,13 @@ class SecxionBot(commands.Bot):
             raw_id = inter.message.embeds[0].description.split("(")[1].replace(")", "")
             old = get_user_balance(raw_id)
             ref.child(f'users/{raw_id}').update({'balance': old + amount})
-            await inter.response.send_message(f"✅ เติมเงินให้ {raw_id} จำนวน {amount} บาท")
+            await inter.response.send_message(f"✅ เติมเงินให้ {raw_id} แล้ว")
 
 bot = SecxionBot()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    await ctx.send("🏪 **SECXION STORE**", view=ShopView())
+    await ctx.send("🏪 **STORE**", view=ShopView())
 
 bot.run(os.getenv("TOKEN"))
