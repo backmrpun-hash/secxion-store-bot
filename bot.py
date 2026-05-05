@@ -5,83 +5,91 @@ from firebase_admin import credentials, db
 import os
 import json
 
-# --- 1. SETUP ระบบพื้นฐาน ---
+# --- CONFIG ---
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
+ADMIN_LOG_CHANNEL = 123456789012345678  # เปลี่ยนเป็น ID ห้องแอดมินของคุณ
 
-# เชื่อมต่อ Firebase แบบเช็คสถานะ
 try:
     if not firebase_admin._apps:
         cred = credentials.Certificate(json.loads(FB_CONF))
         firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
     ref = db.reference('/')
-    print("✅ DATABASE CONNECTED")
 except Exception as e:
-    print(f"❌ DATABASE ERROR: {e}")
+    print(f"Error: {e}")
 
-# --- 2. CLASS ร้านค้า (กันปุ่มหาย) ---
-class Shop(disnake.ui.View):
+# --- FUNCTIONS ---
+def update_bal(uid, amt):
+    curr = ref.child(f'users/{uid}/balance').get() or 0
+    ref.child(f'users/{uid}').update({'balance': curr + amt})
+
+# --- UI: ระบบเติมเงิน ---
+class TopupModal(disnake.ui.Modal):
     def __init__(self):
-        # timeout=None สำคัญมาก เพื่อไม่ให้ปุ่มหมดอายุหลังบอทรันไปนานๆ
+        components = [
+            disnake.ui.TextInput(label="จำนวนเงิน", placeholder="เช่น 50", custom_id="amount"),
+            disnake.ui.TextInput(label="เวลาที่โอน", placeholder="เช่น 12:30", custom_id="time")
+        ]
+        super().__init__(title="แจ้งเติมเงิน", custom_id="topup_modal", components=components)
+
+    async def callback(self, inter: disnake.ModalInteraction):
+        amt = inter.text_values["amount"]
+        time = inter.text_values["time"]
+        
+        # ส่งข้อมูลเข้าห้องแอดมิน
+        channel = inter.bot.get_channel(ADMIN_LOG_CHANNEL)
+        embed = disnake.Embed(title="💰 รายงานการแจ้งโอน", color=0xffff00)
+        embed.add_field(name="ผู้แจ้ง", value=f"{inter.author.mention} ({inter.author.id})")
+        embed.add_field(name="จำนวนเงิน", value=amt)
+        embed.add_field(name="เวลา", value=time)
+        
+        view = AdminApproveView(inter.author.id, float(amt))
+        await channel.send(embed=embed, view=view)
+        await inter.response.send_message("✅ ส่งเรื่องให้แอดมินตรวจสอบแล้ว กรุณารอสักครู่", ephemeral=True)
+
+class AdminApproveView(disnake.ui.View):
+    def __init__(self, user_id, amount):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+        self.amount = amount
+
+    @disnake.ui.button(label="อนุมัติ", style=disnake.ButtonStyle.green)
+    async def approve(self, button, inter):
+        update_bal(self.user_id, self.amount)
+        await inter.response.send_message(f"✅ อนุมัติเงิน {self.amount} บาท ให้ <@{self.user_id}> แล้ว")
+        self.stop()
+
+# --- UI: ร้านค้าหลัก ---
+class MainStoreView(disnake.ui.View):
+    def __init__(self):
         super().__init__(timeout=None)
 
-    @disnake.ui.select(
-        placeholder="🛒 เลือกสินค้าที่นี่",
-        custom_id="secxion_store_v1", # ID ต้องห้ามซ้ำกับของเก่า
-        options=[
-            disnake.SelectOption(label="Netflix Premium", value="netflix", emoji="🎬"),
-            disnake.SelectOption(label="YouTube Premium", value="youtube", emoji="📺")
-        ]
-    )
-    async def select_callback(self, select: disnake.ui.Select, inter: disnake.MessageInteraction):
-        item_type = select.values[0]
-        user_id = str(inter.author.id)
-        
-        # ราคาและข้อมูล
-        prices = {"netflix": 50, "youtube": 30}
-        price = prices.get(item_type, 999)
-        
-        # ดึงข้อมูลจาก Firebase
-        user_data = ref.child('users').child(user_id).get()
-        balance = user_data.get('balance', 0) if user_data else 0
-        stocks = ref.child('stocks').child(item_type).get()
+    @disnake.ui.button(label="💰 เติมเงิน", style=disnake.ButtonStyle.green, custom_id="topup_btn")
+    async def topup(self, button, inter):
+        await inter.response.send_modal(TopupModal())
 
-        if not stocks:
-            return await inter.response.send_message("❌ สินค้าหมดชั่วคราว!", ephemeral=True)
-        
-        if balance < price:
-            return await inter.response.send_message(f"❌ เงินไม่พอ! คุณมี {balance} บาท", ephemeral=True)
+    @disnake.ui.button(label="🛒 ซื้อสินค้า", style=disnake.ButtonStyle.blurple, custom_id="shop_btn")
+    async def shop(self, button, inter):
+        # ใส่โค้ดเลือกสินค้าที่เคยทำไว้ที่นี่
+        await inter.response.send_message("กำลังเปิดระบบร้านค้า...", ephemeral=True)
 
-        # จ่ายเงินและส่งของ
-        item_id = list(stocks.keys())[0]
-        item_detail = str(stocks[item_id])
-
-        ref.child('users').child(user_id).update({'balance': balance - price})
-        ref.child('stocks').child(item_type).child(item_id).delete()
-
-        # ส่งของแบบข้อความธรรมดา (กัน Syntax Error)
-        success_text = f"✅ ซื้อสำเร็จ!\nรายละเอียด: {item_detail}\nคงเหลือ: {balance - price} บาท"
-        await inter.response.send_message(success_text, ephemeral=True)
-
-# --- 3. บอทหลัก ---
+# --- BOT SETUP ---
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
 @bot.event
 async def on_ready():
-    # ลงทะเบียน View เพื่อให้ปุ่มทำงานได้ตลอดเวลาแม้รีสตาร์ทบอท
-    bot.add_view(Shop())
-    print(f"🚀 {bot.user} พร้อมใช้งานแล้ว!")
+    bot.add_view(MainStoreView())
+    print(f"Logged in as {bot.user}")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    # คำสั่งสร้างหน้าร้าน
-    embed = disnake.Embed(
-        title="🏪 SECXION STORE",
-        description="กรุณาเลือกสินค้าจากเมนูด้านล่าง",
-        color=0x2b2d31
-    )
-    await ctx.send(embed=embed, view=Shop())
+    await ctx.send("🏪 **SECXION STORE**\nคลิกปุ่มด้านล่างเพื่อทำรายการ", view=MainStoreView())
 
+# --- RUN BOT ---
+from threading import Thread
+from server import run_web # เรียกใช้ไฟล์เว็บหลังบ้าน
+
+Thread(target=run_web).start() # รันเว็บแยก thread
 bot.run(TOKEN)
