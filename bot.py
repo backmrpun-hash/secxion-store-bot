@@ -70,13 +70,12 @@ class MainStoreView(disnake.ui.View):
         self.create_menu()
 
     def create_menu(self):
-        # ดึงหมวดหมู่จาก Firebase มาสร้างตัวเลือกอัตโนมัติ
         stocks_data = ref.child('stocks').get() or {}
         options = []
 
         for cat_name, items in stocks_data.items():
-            # กรองข้อมูลสินค้าจริง (ไม่นับ _init)
-            real_items = [k for k in items.keys() if k != '_init'] if isinstance(items, dict) else []
+            if not isinstance(items, dict): continue
+            real_items = [k for k in items.keys() if k != '_init']
             count = len(real_items)
             
             if count > 0:
@@ -103,10 +102,9 @@ class MainStoreView(disnake.ui.View):
     async def shop_callback(self, inter: disnake.MessageInteraction):
         itype = inter.values[0]
         if itype == "none":
-            return await inter.response.send_message("❌ ของหมดครับพี่ชาย รอแอดมินลงของนะ", ephemeral=True)
+            return await inter.response.send_message("❌ ของหมดครับพี่ชาย", ephemeral=True)
 
         price = 50 
-        
         udata = ref.child(f'users/{inter.author.id}').get()
         bal = udata.get('balance', 0) if udata else 0
         stocks = ref.child(f'stocks/{itype}').get() or {}
@@ -116,7 +114,7 @@ class MainStoreView(disnake.ui.View):
         if not real_items:
             return await inter.response.send_message("❌ ของหมดกระทันหัน!", ephemeral=True)
         if bal < price:
-            return await inter.response.send_message(f"❌ เงินไม่พอ! (มึงมี {bal} บาท แต่ของราคา {price} บาท)", ephemeral=True)
+            return await inter.response.send_message(f"❌ เงินไม่พอ!", ephemeral=True)
 
         iid = list(real_items.keys())[0]
         detail = str(real_items[iid])
@@ -124,7 +122,7 @@ class MainStoreView(disnake.ui.View):
         ref.child(f'users/{inter.author.id}').update({'balance': bal - price})
         ref.child(f'stocks/{itype}/{iid}').delete()
 
-        # --- แก้ไขบรรทัดที่เคยพัง (Syntax Error) ตรงนี้ครับ ---
+        # --- แก้ไขบรรทัดเจ้าปัญหา (ปิดเครื่องหมายคำพูดและวงเล็บให้ครบ) ---
         try:
             embed_dm = disnake.Embed(title="📦 รายการสั่งซื้อสำเร็จ!", color=0x00ff00)
             embed_dm.add_field(name="หมวดหมู่", value=itype.upper(), inline=True)
@@ -135,7 +133,7 @@ class MainStoreView(disnake.ui.View):
             await inter.author.send(embed=embed_dm)
             msg = "✅ ซื้อสำเร็จ! บอทส่งของให้ใน **แชทส่วนตัว (DM)** แล้วครับ"
         except disnake.Forbidden:
-            msg = f"⚠️ ซื้อสำเร็จ! แต่บอททักแชทมึงไม่ได้ (กรุณาเปิด DM)\n**ของคือ:** {detail}"
+            msg = f"⚠️ ซื้อสำเร็จ! แต่บอททักแชทมึงไม่ได้ (กรุณาเปิด DM)\n**ข้อมูลคือ:** {detail}"
 
         await inter.response.send_message(msg, ephemeral=True)
         self.create_menu()
@@ -147,16 +145,12 @@ bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 @bot.event
 async def on_ready():
     bot.add_view(MainStoreView())
-    print(f"🚀 {bot.user} ONLINE! ระบบพร้อมทำงาน")
+    print(f"🚀 {bot.user} ONLINE!")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
-    emb = disnake.Embed(
-        title="🏪 SECXION STORE", 
-        description="ยินดีต้อนรับ! เลือกเติมเงินหรือซื้อสินค้าได้จากเมนูด้านล่าง", 
-        color=0x2b2d31
-    )
+    emb = disnake.Embed(title="🏪 SECXION STORE", description="เลือกสินค้าได้เลย", color=0x2b2d31)
     await ctx.send(embed=emb, view=MainStoreView())
 
 # --- 4. RUNNING ---
