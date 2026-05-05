@@ -105,12 +105,19 @@ class MainStoreView(disnake.ui.View):
         ref.child(user_path).update({'balance': bal - price})
         ref.child('stocks/' + itype + '/' + iid).delete()
 
-        # --- แก้ไขแบบตัดปัญหา Syntax Error 100% ---
+        # --- วิธีแก้แบบกำปั้นทุบดินที่ไม่มีวันพัง ---
         try:
-            # ใช้วิธีต่อ String แบบแยกส่วน เพื่อไม่ให้มีเครื่องหมายคำพูดค้างเติ่งตอนโดนตัดบรรทัด
-            backticks = '```'
-            newline = chr(10)
-            code_block = backticks + newline + detail + newline + backticks
+            # 1. ประกาศตัวแปรแยกบรรทัดกันให้เด็ดขาด
+            # 2. ใช้ chr(96) แทนเครื่องหมาย backtick (`) และ chr(10) แทน Enter
+            b = chr(96) * 3
+            n = chr(10)
+            
+            # 3. ต่อข้อความโดยไม่ใช้ f-string หรือเครื่องหมายพิเศษ
+            code_block = b
+            code_block += n
+            code_block += detail
+            code_block += n
+            code_block += b
             
             embed_dm = disnake.Embed(title='📦 ซื้อสินค้าสำเร็จ', color=0x00ff00)
             embed_dm.add_field(name='สินค้า', value=code_block, inline=False)
