@@ -141,8 +141,8 @@ class MainStoreView(disnake.ui.View):
         try:
             dm_emb = disnake.Embed(title="🎁 รายการสั่งซื้อสำเร็จ", color=0x00ff00)
             dm_emb.add_field(name="สินค้า", value=f"**{itype.upper()}**", inline=False)
-            dm_emb.add_field(name="ข้อมูลสินค้า / ลิงก์ดาวน์โหลด", value=f"```\n{detail}\n
-```", inline=False)
+            # แบบที่ถูกต้อง
+embed_dm.add_field(name="ข้อมูลสินค้า / ลิงก์ดาวน์โหลด", value=f"```\n{detail}\n```", inline=False)
             dm_emb.set_footer(text="SECXION STORE - ขอบคุณที่อุดหนุน")
             
             await inter.author.send(embed=dm_emb)
