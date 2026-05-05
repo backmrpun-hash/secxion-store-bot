@@ -105,12 +105,12 @@ class MainStoreView(disnake.ui.View):
         ref.child(user_path).update({'balance': bal - price})
         ref.child('stocks/' + itype + '/' + iid).delete()
 
-        # --- แก้ไขจุดที่มีปัญหาแบบถาวร: ใช้ Format แบบปลอดภัยที่สุด ---
+        # --- แก้ไขแบบตัดปัญหา Syntax Error 100% ---
         try:
-            # ใช้ chr(10) แทน \n เพื่อเลี่ยง Syntax Error ตอนก๊อปวาง
-            n = chr(10)
-            code_block = '```' + n + detail + n + '
-```'
+            # ใช้วิธีต่อ String แบบแยกส่วน เพื่อไม่ให้มีเครื่องหมายคำพูดค้างเติ่งตอนโดนตัดบรรทัด
+            backticks = '```'
+            newline = chr(10)
+            code_block = backticks + newline + detail + newline + backticks
             
             embed_dm = disnake.Embed(title='📦 ซื้อสินค้าสำเร็จ', color=0x00ff00)
             embed_dm.add_field(name='สินค้า', value=code_block, inline=False)
