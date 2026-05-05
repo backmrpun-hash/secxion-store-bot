@@ -1,18 +1,18 @@
 import disnake
-from disnake.ext import commands
+from disnake.ext import commands, tasks
 import firebase_admin
 from firebase_admin import credentials, db
-from threading import Thread
-import os
-import json
+import os, json
 
-# ===== SETTINGS =====
+# ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
-ADMIN_LOG_ID = 1496076202509598720
 SETUP_CHANNEL_ID = 1501239836516946061
+ADMIN_LOG_ID = 1496076202509598720
+
+store_message_id = None
 
 # ===== FIREBASE =====
 try:
@@ -28,11 +28,8 @@ except Exception as e:
 def codeblock(text):
     return f"```\n{text}\n```"
 
-# ===== EMBED BUILDER (REALTIME) =====
-def build_store_embed(user_id):
-    user = ref.child(f"users/{user_id}").get() if ref else {}
-    bal = user.get("balance", 0)
-
+# ===== EMBED =====
+def build_store_embed():
     stocks = ref.child("stocks").get() if ref else {}
     stocks = stocks or {}
 
@@ -46,21 +43,18 @@ def build_store_embed(user_id):
         stock_text = "ไม่มีสินค้า"
 
     emb = disnake.Embed(
-        title="🏪 STORE PANEL",
-        description="ระบบร้านค้าอัตโนมัติ",
+        title="🏪 STORE AUTO",
+        description="อัปเดทอัตโนมัติ",
         color=0x2b2d31
     )
 
-    emb.add_field(name="💰 ยอดเงิน", value=codeblock(str(bal)))
     emb.add_field(name="📦 สต็อก", value=codeblock(stock_text), inline=False)
-
     return emb
 
-# ===== UI =====
+# ===== VIEW =====
 class StoreView(disnake.ui.View):
-    def __init__(self, user_id):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.user_id = user_id
         self.load_menu()
 
     def load_menu(self):
@@ -76,36 +70,17 @@ class StoreView(disnake.ui.View):
         if not options:
             options = [disnake.SelectOption(label="ไม่มีสินค้า", value="none")]
 
-        select = disnake.ui.Select(
-            placeholder="🛒 เลือกสินค้า",
-            options=options
-        )
+        select = disnake.ui.Select(placeholder="🛒 เลือกสินค้า", options=options)
         select.callback = self.buy_item
 
         self.clear_items()
-        self.add_item(disnake.ui.Button(label="💎 เติมเงิน", custom_id="topup"))
-        self.add_item(disnake.ui.Button(label="🔄 รีเฟรช", custom_id="refresh"))
         self.add_item(select)
 
-    async def interaction_check(self, inter):
-        if inter.channel.id != SETUP_CHANNEL_ID:
-            await inter.response.send_message("ใช้ได้เฉพาะห้องที่กำหนด", ephemeral=True)
-            return False
-
-        if inter.data.get("custom_id") == "topup":
-            await inter.response.send_modal(TopupModal())
-            return False
-
-        if inter.data.get("custom_id") == "refresh":
-            emb = build_store_embed(inter.author.id)
-            await inter.response.edit_message(embed=emb, view=StoreView(inter.author.id))
-            return False
-
-        return True
-
     async def buy_item(self, inter: disnake.MessageInteraction):
-        cat = inter.values[0]
+        if inter.channel.id != SETUP_CHANNEL_ID:
+            return await inter.response.send_message("ใช้ได้เฉพาะห้องร้าน", ephemeral=True)
 
+        cat = inter.values[0]
         if cat == "none":
             return await inter.response.send_message("ของหมด", ephemeral=True)
 
@@ -126,6 +101,7 @@ class StoreView(disnake.ui.View):
         key = list(real_items.keys())[0]
         detail = str(real_items[key])
 
+        # update db
         ref.child(user_path).update({"balance": bal - price})
         ref.child(f"stocks/{cat}/{key}").delete()
 
@@ -141,50 +117,53 @@ class StoreView(disnake.ui.View):
         except:
             msg = f"⚠️ DM ไม่ได้\n{detail}"
 
-        emb = build_store_embed(inter.author.id)
-        await inter.response.edit_message(embed=emb, view=StoreView(inter.author.id))
-        await inter.followup.send(msg, ephemeral=True)
-
-# ===== TOPUP =====
-class TopupModal(disnake.ui.Modal):
-    def __init__(self):
-        components = [
-            disnake.ui.TextInput(label="จำนวนเงิน", custom_id="amt"),
-            disnake.ui.TextInput(label="เวลา", custom_id="time")
-        ]
-        super().__init__(title="แจ้งเติมเงิน", components=components)
-
-    async def callback(self, inter):
-        amt = inter.text_values["amt"]
-        time = inter.text_values["time"]
-
-        ch = inter.bot.get_channel(ADMIN_LOG_ID)
-
-        emb = disnake.Embed(title="💰 แจ้งเติมเงิน", color=0xffff00)
-        emb.add_field(name="ผู้ใช้", value=inter.author.mention)
-        emb.add_field(name="จำนวน", value=amt)
-        emb.add_field(name="เวลา", value=time)
-
-        await ch.send(embed=emb)
-        await inter.response.send_message("แจ้งแล้ว รอแอดมิน", ephemeral=True)
+        await inter.response.send_message(msg, ephemeral=True)
 
 # ===== BOT =====
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
-@bot.command()
-async def setup(ctx):
-    if ctx.channel.id != SETUP_CHANNEL_ID:
-        return await ctx.send("ใช้คำสั่งนี้ในห้องที่กำหนดเท่านั้น")
-
-    emb = build_store_embed(ctx.author.id)
-    await ctx.send(embed=emb, view=StoreView(ctx.author.id))
-
 @bot.event
 async def on_ready():
+    global store_message_id
     print("ONLINE")
 
+    channel = bot.get_channel(SETUP_CHANNEL_ID)
+
+    # หา message เก่า
+    async for msg in channel.history(limit=20):
+        if msg.author == bot.user:
+            store_message_id = msg.id
+            break
+
+    emb = build_store_embed()
+    view = StoreView()
+
+    if store_message_id:
+        try:
+            msg = await channel.fetch_message(store_message_id)
+            await msg.edit(embed=emb, view=view)
+        except:
+            msg = await channel.send(embed=emb, view=view)
+            store_message_id = msg.id
+    else:
+        msg = await channel.send(embed=emb, view=view)
+        store_message_id = msg.id
+
+    auto_update.start()
+
+# ===== AUTO UPDATE =====
+@tasks.loop(seconds=5)
+async def auto_update():
+    try:
+        channel = bot.get_channel(SETUP_CHANNEL_ID)
+        msg = await channel.fetch_message(store_message_id)
+
+        await msg.edit(
+            embed=build_store_embed(),
+            view=StoreView()
+        )
+    except Exception as e:
+        print("Update Error:", e)
+
 # ===== RUN =====
-if __name__ == "__main__":
-    from server import run_web
-    Thread(target=run_web, daemon=True).start()
-    bot.run(TOKEN)
+bot.run(TOKEN)
