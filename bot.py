@@ -4,14 +4,17 @@ import firebase_admin
 from firebase_admin import credentials, db
 import requests, json, os
 
+from PIL import Image
+from io import BytesIO
+import pytesseract
+import re
+
+# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 SETUP_CHANNEL_ID = 1501239836516946061
-
-SLIPGO_KEY = "Gg119bHeRI8dksTQuuHEAkEZHK9+9PQ_4Opmkz469SQ="
-SLIPGO_API = "https://api.slip2go.com/api/verify-slip/image"
 
 PROMPTPAY_ID = "0655292340"
 
@@ -23,32 +26,20 @@ ref = db.reference("/")
 
 store_message_id = None
 
-# ================= VERIFY SLIP (FIXED) =================
+# ================= OCR SLIP =================
 def verify_slip_image(image_url):
     try:
-        headers = {
-            "Authorization": f"Bearer {SLIPGO_KEY}"
-        }
+        img_data = requests.get(image_url, timeout=10).content
+        img = Image.open(BytesIO(img_data))
 
-        # clean discord url
-        clean_url = image_url.split("?")[0]
+        text = pytesseract.image_to_string(img, lang="tha+eng")
 
-        data = {
-            "imageUrl": clean_url
-        }
+        print("OCR RESULT:", text)
 
-        res = requests.post(SLIPGO_API, json=data, headers=headers, timeout=15)
-
-        print("STATUS:", res.status_code)
-        print("BODY:", res.text)
-
-        if res.status_code != 200:
-            return None
-
-        return res.json()
+        return text
 
     except Exception as e:
-        print("SLIP ERROR:", e)
+        print("OCR ERROR:", e)
         return None
 
 
@@ -151,20 +142,28 @@ async def on_message(message):
 
             await message.reply("⏳ กำลังตรวจสลิป...")
 
-            slip = verify_slip_image(att.url)
+            slip_text = verify_slip_image(att.url)
 
-            if not slip:
-                return await message.reply("❌ ตรวจไม่ผ่าน (API ERROR)")
+            if not slip_text:
+                return await message.reply("❌ อ่านสลิปไม่ได้")
 
-            data = slip.get("data", {})
+            # 🔍 ดึงตัวเลขทั้งหมด
+            numbers = [int(n) for n in re.findall(r"\d+", slip_text)]
 
-            amount = data.get("amount")
-            ref_code = data.get("transRef")
+            # 🔥 เลือกเฉพาะยอดเงินจริง
+            candidates = [n for n in numbers if 10 <= n <= 50000]
 
-            if not amount or not ref_code:
-                return await message.reply("❌ สลิปไม่ถูกต้อง")
+            if not candidates:
+                return await message.reply("❌ ไม่เจอจำนวนเงิน")
 
-            # กันสลิปซ้ำ
+            amount = max(candidates)
+
+            # กันโกง
+            if amount <= 0:
+                return await message.reply("❌ จำนวนเงินผิดปกติ")
+
+            ref_code = f"{message.id}_{amount}"
+
             if ref.child(f"transactions/{ref_code}").get():
                 return await message.reply("❌ สลิปซ้ำ")
 
@@ -173,7 +172,7 @@ async def on_message(message):
             bal = ref.child(f"users/{user_id}/balance").get() or 0
 
             ref.child(f"users/{user_id}").update({
-                "balance": bal + int(amount)
+                "balance": bal + amount
             })
 
             ref.child(f"transactions/{ref_code}").set({
