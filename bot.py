@@ -29,17 +29,27 @@ def verify_slip_image(image_url):
         "Authorization": f"Bearer {SLIPGO_KEY}"
     }
 
-    data = {
-        "imageUrl": image_url
-    }
+    try:
+        # 🔥 ดาวน์โหลดรูปก่อน (สำคัญ)
+        img = requests.get(image_url, timeout=10).content
 
-    res = requests.post(SLIPGO_API, json=data, headers=headers)
+        files = {
+            "file": ("slip.png", img)
+        }
 
-    if res.status_code != 200:
-        print(res.text)
+        res = requests.post(SLIPGO_API, headers=headers, files=files, timeout=15)
+
+        print("STATUS:", res.status_code)
+        print("BODY:", res.text)
+
+        if res.status_code != 200:
+            return None
+
+        return res.json()
+
+    except Exception as e:
+        print("VERIFY ERROR:", e)
         return None
-
-    return res.json()
 
 # ===== STORE =====
 def build_embed():
