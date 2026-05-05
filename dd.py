@@ -105,12 +105,12 @@ class MainStoreView(disnake.ui.View):
         ref.child(user_path).update({'balance': bal - price})
         ref.child('stocks/' + itype + '/' + iid).delete()
 
-        # --- แก้ไขจุดที่มีปัญหาด้วย Triple Quotes ---
+        # --- แก้ไขจุดที่มีปัญหาแบบถาวร: ใช้ Format แบบปลอดภัยที่สุด ---
         try:
-            # ใช้ Triple Quotes เพื่ออนุญาตให้มี Newline ได้โดยไม่พัง
-            code_block = f'''```
-{detail}
-```'''
+            # ใช้ chr(10) แทน \n เพื่อเลี่ยง Syntax Error ตอนก๊อปวาง
+            n = chr(10)
+            code_block = '```' + n + detail + n + '
+```'
             
             embed_dm = disnake.Embed(title='📦 ซื้อสินค้าสำเร็จ', color=0x00ff00)
             embed_dm.add_field(name='สินค้า', value=code_block, inline=False)
