@@ -8,6 +8,7 @@ import datetime
 
 # --- 1. ตั้งค่า Firebase ---
 firebase_config_raw = os.getenv("FIREBASE_CONFIG")
+# แก้บรรทัดนี้ใน bot.py ให้ตรงกับของคุณ
 database_url = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
 if firebase_config_raw:
