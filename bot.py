@@ -67,8 +67,10 @@ class ShopView(disnake.ui.View):
 
         # --- แก้ไขจุด Syntax Error แบบเด็ดขาด ---
         # แยกข้อความออกมาก่อน ไม่ต้องใส่ f-string ซ้อนใน add_field
-        display_text = "```\n" + item_detail + "\n
-```"
+# --- แก้ไขจุด Syntax Error แบบเด็ดขาด ---
+        # ใช้ .format() เพื่อเลี่ยงการใช้เครื่องหมายคำพูดซ้อนกันเยอะๆ
+        display_text = "```\n{}\n
+```".format(item_detail)
         
         embed = disnake.Embed(title="✅ ซื้อสินค้าสำเร็จ", color=0x00ff00)
         embed.add_field(name="📦 รายละเอียดสินค้า", value=display_text, inline=False)
