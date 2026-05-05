@@ -2,8 +2,10 @@ import disnake
 from disnake.ext import commands, tasks
 import firebase_admin
 from firebase_admin import credentials, db
-import requests, json, os, cv2, numpy as np
+import requests, json, os
 from pyzbar.pyzbar import decode
+from PIL import Image
+from io import BytesIO
 
 # ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
@@ -12,7 +14,7 @@ FB_CONF = os.getenv("FIREBASE_CONFIG")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 SETUP_CHANNEL_ID = 1501239836516946061
 
-SLIPGO_KEY = "ใส่ SECRET KEY ตรงนี้"
+SLIPGO_KEY = "ใส่ KEY"
 SLIPGO_API = "https://api.slip2go.com/api/verify-slip/qr-code/info"
 
 PROMPTPAY_ID = "0812345678"
@@ -27,16 +29,10 @@ cred = credentials.Certificate(json.loads(FB_CONF))
 firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
 ref = db.reference("/")
 
-# ===== UTILS =====
-def codeblock(t):
-    return f"```\n{t}\n```"
-
-# ===== QR READ =====
+# ===== QR READ (ไม่ใช้ cv2 แล้ว) =====
 def read_qr_from_image(url):
-    import requests
-    resp = requests.get(url)
-    img_arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
-    img = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
+    response = requests.get(url)
+    img = Image.open(BytesIO(response.content))
 
     decoded = decode(img)
     if not decoded:
@@ -44,18 +40,14 @@ def read_qr_from_image(url):
 
     return decoded[0].data.decode("utf-8")
 
-# ===== SLIP VERIFY =====
+# ===== VERIFY =====
 def verify_slip(qr_code):
     headers = {
         "Authorization": f"Bearer {SLIPGO_KEY}",
         "Content-Type": "application/json"
     }
 
-    data = {
-        "payload": {
-            "qrCode": qr_code
-        }
-    }
+    data = {"payload": {"qrCode": qr_code}}
 
     res = requests.post(SLIPGO_API, json=data, headers=headers)
 
@@ -83,7 +75,7 @@ def build_embed():
         description="!topup <จำนวน>",
         color=0x2b2d31
     )
-    emb.add_field(name="📦 สินค้า", value=codeblock(text), inline=False)
+    emb.add_field(name="📦 สินค้า", value=f"```{text}```", inline=False)
     return emb
 
 # ===== VIEW =====
@@ -97,8 +89,7 @@ class StoreView(disnake.ui.View):
         options = []
 
         for cat, data in stocks.items():
-            items = data.get("items", {})
-            if items:
+            if data.get("items"):
                 options.append(disnake.SelectOption(label=cat, value=cat))
 
         if not options:
@@ -142,7 +133,7 @@ async def topup(ctx, amount: int):
 
     emb = disnake.Embed(
         title="💳 เติมเงิน",
-        description=f"{amount} บาท\nสแกนแล้วส่งสลิป",
+        description=f"{amount} บาท\nส่งสลิปหลังโอน",
         color=0x00ff00
     )
     emb.set_image(url=qr)
@@ -157,7 +148,7 @@ async def on_message(message):
 
     if message.attachments:
         for att in message.attachments:
-            if "image" in att.content_type:
+            if "image" in str(att.content_type):
 
                 await message.reply("⏳ กำลังตรวจสลิป...")
 
@@ -167,17 +158,17 @@ async def on_message(message):
 
                 slip = verify_slip(qr)
                 if not slip:
-                    return await message.reply("❌ ตรวจสลิปไม่ผ่าน")
+                    return await message.reply("❌ ตรวจไม่ผ่าน")
 
                 try:
                     amount = int(slip["data"]["amount"])
                     ref_code = slip["data"]["transRef"]
                 except:
-                    return await message.reply("❌ format API เปลี่ยน")
+                    return await message.reply("❌ API เปลี่ยน")
 
-                # ===== กันโกง =====
+                # กันโกง
                 if ref.child(f"transactions/{ref_code}").get():
-                    return await message.reply("❌ สลิปนี้ใช้แล้ว")
+                    return await message.reply("❌ สลิปซ้ำ")
 
                 user_id = str(message.author.id)
                 bal = ref.child(f"users/{user_id}/balance").get() or 0
@@ -191,7 +182,7 @@ async def on_message(message):
                     "user": user_id
                 })
 
-                await message.reply(f"✅ เติมเงินสำเร็จ +{amount}")
+                await message.reply(f"✅ เติมเงิน +{amount}")
 
     await bot.process_commands(message)
 
