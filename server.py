@@ -2,13 +2,12 @@ from flask import Flask, render_template, request, redirect
 from firebase_admin import db
 import os
 
-# ตั้งค่าให้หา index.html ในโฟลเดอร์ปัจจุบัน
+# ตั้งค่าให้หา HTML ในโฟลเดอร์ปัจจุบัน
 app = Flask(__name__, template_folder='.')
 
 @app.route('/')
 def index():
     try:
-        # ป้องกันเว็บล่มถ้าไม่มี Path stocks ใน DB
         stocks_data = db.reference('/stocks').get()
         stocks = stocks_data if isinstance(stocks_data, dict) else {}
         return render_template('index.html', stocks=stocks)
@@ -21,14 +20,13 @@ def add_stock():
     raw_detail = request.form.get('detail')
     
     if item_type and raw_detail:
-        # แยกบรรทัด, ลบช่องว่าง, และกรองบรรทัดว่างออก
-        lines = raw_detail.split('\n')
-        items_to_add = [line.strip() for line in lines if line.strip()]
+        # แยกบรรทัด ตัดช่องว่าง และกรองบรรทัดว่างออก
+        items = [line.strip() for line in raw_detail.split('\n') if line.strip()]
         
-        if items_to_add:
+        if items:
             ref = db.reference(f'/stocks/{item_type}')
-            for item in items_to_add:
-                ref.push(item) # ส่งเข้า Firebase ทีละชิ้น
+            for item in items:
+                ref.push(item) # เพิ่มเข้า Firebase ทีละบรรทัด
                 
     return redirect('/')
 
