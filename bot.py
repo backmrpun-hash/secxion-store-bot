@@ -30,14 +30,14 @@ def verify_slip_image(image_url):
             "Authorization": f"Bearer {SLIPGO_KEY}"
         }
 
-        # 🔥 โหลดรูปจาก Discord CDN แล้วส่งเป็น file (ไม่ใช้ OCR)
-        img = requests.get(image_url, timeout=10).content
+        # 🔥 ต้องแปลง Discord URL → public downloadable
+        img_url = image_url.split("?")[0]
 
-        files = {
-            "file": ("slip.png", img)
+        data = {
+            "imageUrl": img_url
         }
 
-        res = requests.post(SLIPGO_API, headers=headers, files=files, timeout=15)
+        res = requests.post(SLIPGO_API, json=data, headers=headers, timeout=15)
 
         print("STATUS:", res.status_code)
         print("BODY:", res.text)
@@ -48,7 +48,7 @@ def verify_slip_image(image_url):
         return res.json()
 
     except Exception as e:
-        print("SLIP ERROR:", e)
+        print("API ERROR:", e)
         return None
 
 
