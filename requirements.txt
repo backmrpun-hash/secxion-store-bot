@@ -1,3 +1,5 @@
 disnake
 firebase-admin
 requests
+pillow
+pytesseract
