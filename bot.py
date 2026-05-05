@@ -23,18 +23,18 @@ ref = db.reference("/")
 
 store_message_id = None
 
-# ===== VERIFY SLIP (FIXED จริง) =====
+# ================= VERIFY SLIP (FIXED) =================
 def verify_slip_image(image_url):
     try:
         headers = {
             "Authorization": f"Bearer {SLIPGO_KEY}"
         }
 
-        # 🔥 ต้องแปลง Discord URL → public downloadable
-        img_url = image_url.split("?")[0]
+        # clean discord url
+        clean_url = image_url.split("?")[0]
 
         data = {
-            "imageUrl": img_url
+            "imageUrl": clean_url
         }
 
         res = requests.post(SLIPGO_API, json=data, headers=headers, timeout=15)
@@ -48,11 +48,11 @@ def verify_slip_image(image_url):
         return res.json()
 
     except Exception as e:
-        print("API ERROR:", e)
+        print("SLIP ERROR:", e)
         return None
 
 
-# ===== STORE =====
+# ================= STORE =================
 def build_embed():
     stocks = ref.child("stocks").get() or {}
     text = ""
@@ -122,7 +122,7 @@ class StoreView(disnake.ui.View):
         await inter.response.send_message("ซื้อสำเร็จ", ephemeral=True)
 
 
-# ===== TOPUP =====
+# ================= TOPUP =================
 @bot.command()
 async def topup(ctx, amount: int):
     qr = f"https://promptpay.io/{PROMPTPAY_ID}/{amount}.png"
@@ -137,7 +137,7 @@ async def topup(ctx, amount: int):
     await ctx.send(embed=emb)
 
 
-# ===== AUTO TOPUP (FIXED 100%) =====
+# ================= AUTO TOPUP =================
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -154,24 +154,26 @@ async def on_message(message):
             slip = verify_slip_image(att.url)
 
             if not slip:
-                return await message.reply("❌ ตรวจไม่ผ่าน (API error)")
+                return await message.reply("❌ ตรวจไม่ผ่าน (API ERROR)")
 
-            # 🔥 ดึงค่าจาก API จริง
-            try:
-                amount = int(slip["data"]["amount"])
-                ref_code = slip["data"]["transRef"]
-            except:
-                return await message.reply("❌ API format เปลี่ยน")
+            data = slip.get("data", {})
+
+            amount = data.get("amount")
+            ref_code = data.get("transRef")
+
+            if not amount or not ref_code:
+                return await message.reply("❌ สลิปไม่ถูกต้อง")
 
             # กันสลิปซ้ำ
             if ref.child(f"transactions/{ref_code}").get():
                 return await message.reply("❌ สลิปซ้ำ")
 
             user_id = str(message.author.id)
+
             bal = ref.child(f"users/{user_id}/balance").get() or 0
 
             ref.child(f"users/{user_id}").update({
-                "balance": bal + amount
+                "balance": bal + int(amount)
             })
 
             ref.child(f"transactions/{ref_code}").set({
@@ -184,7 +186,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# ===== READY =====
+# ================= READY =================
 @bot.event
 async def on_ready():
     global store_message_id
