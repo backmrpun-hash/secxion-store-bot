@@ -4,14 +4,17 @@ import firebase_admin
 from firebase_admin import credentials, db
 import requests, json, os
 
+# 🔥 เพิ่ม import ที่ขาด
+from PIL import Image
+from io import BytesIO
+import pytesseract
+import re
+
 TOKEN = os.getenv("TOKEN")
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 SETUP_CHANNEL_ID = 1501239836516946061
-
-SLIPGO_KEY = "Gg119bHeRI8dksTQuuHEAkEZHK9+9PQ_4Opmkz469SQ="
-SLIPGO_API = "https://api.slip2go.com/api/verify-slip/image"
 
 PROMPTPAY_ID = "0655292340"
 
@@ -23,33 +26,22 @@ ref = db.reference("/")
 
 store_message_id = None
 
-# ===== VERIFY (ส่งรูปไปเลย) =====
+# ===== VERIFY (OCR) =====
 def verify_slip_image(image_url):
-    headers = {
-        "Authorization": f"Bearer {SLIPGO_KEY}"
-    }
-
     try:
-        # 🔥 ดาวน์โหลดรูปก่อน (สำคัญ)
-        img = requests.get(image_url, timeout=10).content
+        img_data = requests.get(image_url, timeout=10).content
+        img = Image.open(BytesIO(img_data))
 
-        files = {
-            "file": ("slip.png", img)
-        }
+        text = pytesseract.image_to_string(img, lang="tha+eng")
 
-        res = requests.post(SLIPGO_API, headers=headers, files=files, timeout=15)
+        print("OCR RESULT:", text)
 
-        print("STATUS:", res.status_code)
-        print("BODY:", res.text)
-
-        if res.status_code != 200:
-            return None
-
-        return res.json()
+        return text
 
     except Exception as e:
-        print("VERIFY ERROR:", e)
+        print("OCR ERROR:", e)
         return None
+
 
 # ===== STORE =====
 def build_embed():
@@ -71,6 +63,7 @@ def build_embed():
     )
     emb.add_field(name="📦 สินค้า", value=f"```{text}```", inline=False)
     return emb
+
 
 class StoreView(disnake.ui.View):
     def __init__(self):
@@ -119,6 +112,7 @@ class StoreView(disnake.ui.View):
         await inter.author.send(f"สินค้า:\n{data}")
         await inter.response.send_message("ซื้อสำเร็จ", ephemeral=True)
 
+
 # ===== TOPUP =====
 @bot.command()
 async def topup(ctx, amount: int):
@@ -133,6 +127,7 @@ async def topup(ctx, amount: int):
 
     await ctx.send(embed=emb)
 
+
 # ===== AUTO TOPUP =====
 @bot.event
 async def on_message(message):
@@ -141,39 +136,53 @@ async def on_message(message):
 
     if message.attachments:
         for att in message.attachments:
-            if "image" in str(att.content_type):
 
-                await message.reply("⏳ กำลังตรวจสลิป...")
+            if not att.content_type:
+                continue
 
-                slip = verify_slip_image(att.url)
-                if not slip:
-                    return await message.reply("❌ ตรวจไม่ผ่าน")
+            if "image" not in att.content_type:
+                continue
 
-                try:
-                    amount = int(slip["data"]["amount"])
-                    ref_code = slip["data"]["transRef"]
-                except:
-                    return await message.reply("❌ API เปลี่ยน")
+            await message.reply("⏳ กำลังตรวจสลิป...")
 
-                # กันโกง
-                if ref.child(f"transactions/{ref_code}").get():
-                    return await message.reply("❌ สลิปซ้ำ")
+            slip_text = verify_slip_image(att.url)
 
-                user_id = str(message.author.id)
-                bal = ref.child(f"users/{user_id}/balance").get() or 0
+            if not slip_text:
+                return await message.reply("❌ ตรวจไม่ผ่าน")
 
-                ref.child(f"users/{user_id}").update({
-                    "balance": bal + amount
-                })
+            # 🔍 หาเลขจาก OCR
+            amount_match = re.findall(r"\d+", slip_text)
 
-                ref.child(f"transactions/{ref_code}").set({
-                    "amount": amount,
-                    "user": user_id
-                })
+            if not amount_match:
+                return await message.reply("❌ ไม่เจอจำนวนเงิน")
 
-                await message.reply(f"✅ เติมเงิน +{amount}")
+            amount = int(amount_match[0])
+
+            if amount <= 0:
+                return await message.reply("❌ จำนวนเงินผิดปกติ")
+
+            # กันโกง (สร้าง ref code ใหม่)
+            ref_code = f"{message.id}_{amount}"
+
+            if ref.child(f"transactions/{ref_code}").get():
+                return await message.reply("❌ สลิปซ้ำ")
+
+            user_id = str(message.author.id)
+            bal = ref.child(f"users/{user_id}/balance").get() or 0
+
+            ref.child(f"users/{user_id}").update({
+                "balance": bal + amount
+            })
+
+            ref.child(f"transactions/{ref_code}").set({
+                "amount": amount,
+                "user": user_id
+            })
+
+            await message.reply(f"✅ เติมเงิน +{amount}")
 
     await bot.process_commands(message)
+
 
 # ===== READY =====
 @bot.event
@@ -186,11 +195,13 @@ async def on_ready():
     store_message_id = msg.id
     auto_update.start()
 
+
 @tasks.loop(seconds=5)
 async def auto_update():
     channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
     msg = await channel.fetch_message(store_message_id)
 
     await msg.edit(embed=build_embed(), view=StoreView())
+
 
 bot.run(TOKEN)
