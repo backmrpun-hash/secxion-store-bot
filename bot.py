@@ -4,17 +4,14 @@ import firebase_admin
 from firebase_admin import credentials, db
 import requests, json, os
 
-# 🔥 เพิ่ม import ที่ขาด
-from PIL import Image
-from io import BytesIO
-import pytesseract
-import re
-
 TOKEN = os.getenv("TOKEN")
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 SETUP_CHANNEL_ID = 1501239836516946061
+
+SLIPGO_KEY = "Gg119bHeRI8dksTQuuHEAkEZHK9+9PQ_4Opmkz469SQ="
+SLIPGO_API = "https://api.slip2go.com/api/verify-slip/image"
 
 PROMPTPAY_ID = "0655292340"
 
@@ -26,20 +23,32 @@ ref = db.reference("/")
 
 store_message_id = None
 
-# ===== VERIFY (OCR) =====
+# ===== VERIFY SLIP (FIXED จริง) =====
 def verify_slip_image(image_url):
     try:
-        img_data = requests.get(image_url, timeout=10).content
-        img = Image.open(BytesIO(img_data))
+        headers = {
+            "Authorization": f"Bearer {SLIPGO_KEY}"
+        }
 
-        text = pytesseract.image_to_string(img, lang="tha+eng")
+        # 🔥 โหลดรูปจาก Discord CDN แล้วส่งเป็น file (ไม่ใช้ OCR)
+        img = requests.get(image_url, timeout=10).content
 
-        print("OCR RESULT:", text)
+        files = {
+            "file": ("slip.png", img)
+        }
 
-        return text
+        res = requests.post(SLIPGO_API, headers=headers, files=files, timeout=15)
+
+        print("STATUS:", res.status_code)
+        print("BODY:", res.text)
+
+        if res.status_code != 200:
+            return None
+
+        return res.json()
 
     except Exception as e:
-        print("OCR ERROR:", e)
+        print("SLIP ERROR:", e)
         return None
 
 
@@ -128,7 +137,7 @@ async def topup(ctx, amount: int):
     await ctx.send(embed=emb)
 
 
-# ===== AUTO TOPUP =====
+# ===== AUTO TOPUP (FIXED 100%) =====
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -137,33 +146,24 @@ async def on_message(message):
     if message.attachments:
         for att in message.attachments:
 
-            if not att.content_type:
-                continue
-
-            if "image" not in att.content_type:
+            if not att.content_type or "image" not in att.content_type:
                 continue
 
             await message.reply("⏳ กำลังตรวจสลิป...")
 
-            slip_text = verify_slip_image(att.url)
+            slip = verify_slip_image(att.url)
 
-            if not slip_text:
-                return await message.reply("❌ ตรวจไม่ผ่าน")
+            if not slip:
+                return await message.reply("❌ ตรวจไม่ผ่าน (API error)")
 
-            # 🔍 หาเลขจาก OCR
-            amount_match = re.findall(r"\d+", slip_text)
+            # 🔥 ดึงค่าจาก API จริง
+            try:
+                amount = int(slip["data"]["amount"])
+                ref_code = slip["data"]["transRef"]
+            except:
+                return await message.reply("❌ API format เปลี่ยน")
 
-            if not amount_match:
-                return await message.reply("❌ ไม่เจอจำนวนเงิน")
-
-            amount = int(amount_match[0])
-
-            if amount <= 0:
-                return await message.reply("❌ จำนวนเงินผิดปกติ")
-
-            # กันโกง (สร้าง ref code ใหม่)
-            ref_code = f"{message.id}_{amount}"
-
+            # กันสลิปซ้ำ
             if ref.child(f"transactions/{ref_code}").get():
                 return await message.reply("❌ สลิปซ้ำ")
 
