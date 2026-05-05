@@ -1,6 +1,6 @@
 disnake
 firebase-admin
 requests
-opencv-python
-numpy
 pyzbar
+Pillow
+numpy
