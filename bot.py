@@ -5,16 +5,17 @@ from firebase_admin import credentials, db
 import os
 import json
 
-# --- 1. ตั้งค่าการเชื่อมต่อ Firebase ---
+# --- 1. ตั้งค่า Firebase ---
 database_url = "[https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/](https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/)"
 firebase_config_raw = os.getenv("FIREBASE_CONFIG")
 
 if firebase_config_raw:
+    # อ่านจาก Railway Variable
     cred = credentials.Certificate(json.loads(firebase_config_raw))
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred, {'databaseURL': database_url})
 else:
-    # เผื่อไว้รันในคอมตัวเอง
+    # กรณีรันในคอม (ถ้ามีไฟล์)
     cred = credentials.Certificate("serviceAccountKey.json")
 
 ref = db.reference('/')
@@ -31,7 +32,7 @@ class ShopView(disnake.ui.View):
 
     @disnake.ui.select(
         placeholder="🛒 เลือกสินค้าที่ต้องการซื้อ",
-        custom_id="secxion:buy_v1",
+        custom_id="secxion:buy_v2",
         options=[
             disnake.SelectOption(label="Netflix Premium", value="netflix", emoji="🎬", description="ราคา 50 บาท"),
             disnake.SelectOption(label="YouTube Premium", value="youtube", emoji="📺", description="ราคา 30 บาท")
@@ -41,7 +42,7 @@ class ShopView(disnake.ui.View):
         item_type = select.values[0]
         user_id = str(inter.author.id)
         
-        # ราคา (สามารถไปแก้ใน Firebase ได้ถ้าขยันเขียนฟังก์ชันดึงค่า)
+        # ตั้งราคา (สามารถดึงจาก Firebase ได้ในอนาคต)
         prices = {"netflix": 50, "youtube": 30}
         price = prices.get(item_type, 999)
         
@@ -54,42 +55,42 @@ class ShopView(disnake.ui.View):
         if user_bal < price:
             return await inter.response.send_message(f"❌ เงินไม่พอ! (มี {user_bal} บาท ขาดอีก {price - user_bal} บาท)", ephemeral=True)
 
-        # สุ่มหรือดึงสินค้าชิ้นแรก
+        # ดึงสินค้าชิ้นแรก
         item_id = list(stocks.keys())[0]
         item_detail = stocks[item_id]
 
-        # หักเงินและลบของออกจาก Firebase
+        # หักเงินและลบของออกจากฐานข้อมูล
         ref.child(f'users/{user_id}').update({'balance': user_bal - price})
         ref.child(f'stocks/{item_type}/{item_id}').delete()
 
-        # แก้ไขจุดที่ Syntax Error แล้ว:
+        # แก้ไขจุดที่ Syntax Error แล้ว (ปิดเครื่องหมายคำพูดและ Code block ให้ครบ)
         embed = disnake.Embed(title="✅ สั่งซื้อสำเร็จ!", color=0x2ecc71)
         embed.add_field(name="📦 สินค้าที่ได้รับ", value=f"```\n{item_detail}\n```", inline=False)
         embed.set_footer(text=f"หักเงิน {price} บาท | ยอดเงินคงเหลือ {user_bal - price} บาท")
         
         await inter.response.send_message(embed=embed, ephemeral=True)
 
-    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.secondary, custom_id="secxion:bal_v1", emoji="💎")
+    @disnake.ui.button(label="เช็คเงิน", style=disnake.ButtonStyle.secondary, custom_id="secxion:bal_v2", emoji="💎")
     async def check_bal(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
         bal = get_user_balance(inter.author.id)
         await inter.response.send_message(f"💎 ยอดเงินของคุณ: **{bal}** บาท", ephemeral=True)
 
-# --- 4. ระบบยืนยันสลิปสำหรับแอดมิน ---
+# --- 4. ปุ่มอนุมัติสลิปสำหรับแอดมิน ---
 class ConfirmPayment(disnake.ui.View):
     def __init__(self, customer_id):
         super().__init__(timeout=None)
         self.customer_id = customer_id
 
     @disnake.ui.button(label="อนุมัติยอดเงิน", style=disnake.ButtonStyle.success)
-    async def confirm(self, button, inter):
+    async def confirm(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
         if not inter.author.guild_permissions.administrator:
             return await inter.response.send_message("❌ เฉพาะแอดมินเท่านั้น", ephemeral=True)
         
-        # ส่ง Modal ให้แอดมินกรอกจำนวนเงิน
+        # ส่ง Modal ให้แอดมินกรอกยอดเงิน
         await inter.response.send_modal(
-            title="ระบุจำนวนเงินที่จะเพิ่ม",
+            title="ระบุจำนวนเงินที่ได้รับ",
             custom_id="modal_topup",
-            components=[disnake.ui.TextInput(label="จำนวนเงิน", custom_id="amt")]
+            components=[disnake.ui.TextInput(label="จำนวนเงิน", custom_id="amt", placeholder="เช่น 100")]
         )
 
 # --- 5. ตัวบอทหลัก ---
@@ -99,17 +100,18 @@ class SECXION_STORE(commands.Bot):
 
     async def on_ready(self):
         self.add_view(ShopView())
-        print(f"✅ บอท {self.user} เชื่อมต่อ Firebase Real-time พร้อมใช้งาน!")
+        print(f"✅ บอท {self.user} ออนไลน์พร้อมระบบ Firebase")
 
     async def on_message(self, message):
         if message.author.bot: return
         
-        # ตรวจสลิป: ถ้าส่งรูปภาพ จะเด้งปุ่มให้แอดมินกดยืนยัน
+        # ระบบตรวจสลิป (ส่งรูป = แจ้งเติมเงิน)
         if message.attachments:
             for attach in message.attachments:
                 if any(attach.filename.lower().endswith(e) for e in ['.png', '.jpg', '.jpeg']):
                     embed = disnake.Embed(title="🔔 แจ้งโอนเงิน", description=f"ลูกค้า: {message.author.mention}", color=0xf1c40f)
                     embed.set_image(url=attach.url)
+                    # ปุ่มจะผูก ID ลูกค้าไว้
                     await message.reply(embed=embed, view=ConfirmPayment(message.author.id))
         
         await self.process_commands(message)
@@ -117,11 +119,12 @@ class SECXION_STORE(commands.Bot):
     async def on_modal_submit(self, inter: disnake.ModalInteraction):
         if inter.custom_id == "modal_topup":
             amount = float(inter.text_values["amt"])
+            # ดึง ID ลูกค้าจาก Embed description
             customer_id = inter.message.embeds[0].description.split(":")[1].strip("<@! >")
             
             curr = get_user_balance(customer_id)
             ref.child(f'users/{customer_id}').update({'balance': curr + amount})
-            await inter.response.send_message(f"✅ เติมเงินให้ <@{customer_id}> {amount} บาทแล้ว!")
+            await inter.response.send_message(f"✅ เติมเงินให้ <@{customer_id}> {amount} บาทสำเร็จ!")
 
 bot = SECXION_STORE()
 
