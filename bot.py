@@ -10,7 +10,7 @@ import json
 TOKEN = os.getenv("TOKEN")
 DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
-ADMIN_LOG_ID = 1496076202509598720  # ID ห้องแอดมินสำหรับตรวจสลิป
+ADMIN_LOG_ID = 1496076202509598720 
 
 # เชื่อมต่อ Firebase
 try:
@@ -21,7 +21,7 @@ try:
 except Exception as e:
     print(f"Firebase Error: {e}")
 
-# --- 2. UI CLASSES (MODAL & VIEWS) ---
+# --- 2. UI CLASSES ---
 
 class TopupModal(disnake.ui.Modal):
     def __init__(self):
@@ -57,10 +57,8 @@ class AdminApproveView(disnake.ui.View):
     async def approve(self, button, inter: disnake.MessageInteraction):
         if not inter.author.guild_permissions.administrator:
             return await inter.response.send_message("มึงไม่ใช่แอดมิน!", ephemeral=True)
-            
         curr = ref.child(f'users/{self.user_id}/balance').get() or 0
         ref.child(f'users/{self.user_id}').update({'balance': curr + self.amount})
-        
         await inter.response.send_message(f"✅ เติมเงินให้ <@{self.user_id}> สำเร็จ!")
         self.stop()
 
@@ -72,29 +70,18 @@ class MainStoreView(disnake.ui.View):
     def create_menu(self):
         stocks_data = ref.child('stocks').get() or {}
         options = []
-
         for cat_name, items in stocks_data.items():
             if not isinstance(items, dict): continue
             real_items = [k for k in items.keys() if k != '_init']
             count = len(real_items)
-            
             if count > 0:
-                options.append(disnake.SelectOption(
-                    label=cat_name.upper(),
-                    value=cat_name,
-                    description=f"คงเหลือ {count} ชิ้น | ราคา 50 บาท"
-                ))
+                options.append(disnake.SelectOption(label=cat_name.upper(), value=cat_name, description=f"คงเหลือ {count} ชิ้น | ราคา 50 บาท"))
 
         if not options:
             options = [disnake.SelectOption(label="ขณะนี้ไม่มีสินค้าในสต็อก", value="none")]
 
-        select = disnake.ui.Select(
-            placeholder="🛒 เลือกหมวดหมู่สินค้าที่ต้องการซื้อ",
-            custom_id="dynamic_shop_select",
-            options=options
-        )
+        select = disnake.ui.Select(placeholder="🛒 เลือกหมวดหมู่สินค้าที่ต้องการซื้อ", custom_id="dynamic_shop_select", options=options)
         select.callback = self.shop_callback
-        
         self.clear_items()
         self.add_item(disnake.ui.Button(label="💎 เติมเงิน", style=disnake.ButtonStyle.green, custom_id="btn_topup"))
         self.add_item(select)
@@ -108,7 +95,6 @@ class MainStoreView(disnake.ui.View):
         udata = ref.child(f'users/{inter.author.id}').get()
         bal = udata.get('balance', 0) if udata else 0
         stocks = ref.child(f'stocks/{itype}').get() or {}
-        
         real_items = {k: v for k, v in stocks.items() if k != '_init'}
 
         if not real_items:
@@ -122,18 +108,17 @@ class MainStoreView(disnake.ui.View):
         ref.child(f'users/{inter.author.id}').update({'balance': bal - price})
         ref.child(f'stocks/{itype}/{iid}').delete()
 
-        # --- แก้ไขบรรทัดเจ้าปัญหา (ปิดเครื่องหมายคำพูดและวงเล็บให้ครบ) ---
+        # --- แก้ไขบรรทัดเจ้าปัญหาให้จบในบรรทัดเดียว ป้องกัน Error ---
         try:
             embed_dm = disnake.Embed(title="📦 รายการสั่งซื้อสำเร็จ!", color=0x00ff00)
             embed_dm.add_field(name="หมวดหมู่", value=itype.upper(), inline=True)
-            embed_dm.add_field(name="ข้อมูลสินค้า / ลิงก์ดาวน์โหลด", value=f"```\n{detail}\n
+            embed_dm.add_field(name="สินค้า", value=f"```\n{detail}\n
 ```", inline=False)
-            embed_dm.set_footer(text="SECXION STORE - ขอบคุณที่อุดหนุนครับ")
-            
+            embed_dm.set_footer(text="SECXION STORE")
             await inter.author.send(embed=embed_dm)
-            msg = "✅ ซื้อสำเร็จ! บอทส่งของให้ใน **แชทส่วนตัว (DM)** แล้วครับ"
-        except disnake.Forbidden:
-            msg = f"⚠️ ซื้อสำเร็จ! แต่บอททักแชทมึงไม่ได้ (กรุณาเปิด DM)\n**ข้อมูลคือ:** {detail}"
+            msg = "✅ ซื้อสำเร็จ! บอทส่งของให้ใน DM แล้วครับ"
+        except Exception:
+            msg = f"⚠️ บอททัก DM มึงไม่ได้! นี่คือของของมึง: {detail}"
 
         await inter.response.send_message(msg, ephemeral=True)
         self.create_menu()
