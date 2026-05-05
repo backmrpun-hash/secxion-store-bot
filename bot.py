@@ -10,7 +10,6 @@ DB_URL = "https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 FB_CONF = os.getenv("FIREBASE_CONFIG")
 
 SETUP_CHANNEL_ID = 1501239836516946061
-ADMIN_LOG_ID = 1496076202509598720
 
 store_message_id = None
 
@@ -24,31 +23,29 @@ except Exception as e:
     print("Firebase Error:", e)
     ref = None
 
-# ===== SAFE CODEBLOCK =====
+# ===== SAFE =====
 def codeblock(text):
     return f"```\n{text}\n```"
 
 # ===== EMBED =====
 def build_store_embed():
-    stocks = ref.child("stocks").get() if ref else {}
-    stocks = stocks or {}
+    stocks = ref.child("stocks").get() or {}
 
-    stock_text = ""
+    text = ""
     for cat, items in stocks.items():
         if isinstance(items, dict):
             count = len([k for k in items if k != "_init"])
-            stock_text += f"{cat} : {count} ชิ้น\n"
+            text += f"{cat} : {count} ชิ้น\n"
 
-    if not stock_text:
-        stock_text = "ไม่มีสินค้า"
+    if not text:
+        text = "ไม่มีสินค้า"
 
     emb = disnake.Embed(
         title="🏪 STORE AUTO",
-        description="อัปเดทอัตโนมัติ",
+        description="อัปเดทอัตโนมัติ | เติมเงินพิมพ์: topup <จำนวน>",
         color=0x2b2d31
     )
-
-    emb.add_field(name="📦 สต็อก", value=codeblock(stock_text), inline=False)
+    emb.add_field(name="📦 สต็อก", value=codeblock(text), inline=False)
     return emb
 
 # ===== VIEW =====
@@ -101,7 +98,6 @@ class StoreView(disnake.ui.View):
         key = list(real_items.keys())[0]
         detail = str(real_items[key])
 
-        # update db
         ref.child(user_path).update({"balance": bal - price})
         ref.child(f"stocks/{cat}/{key}").delete()
 
@@ -119,6 +115,30 @@ class StoreView(disnake.ui.View):
 
         await inter.response.send_message(msg, ephemeral=True)
 
+# ===== AUTO TOPUP (ง่าย) =====
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # พิมพ์: topup 100
+    if message.content.startswith("topup"):
+        try:
+            amount = int(message.content.split()[1])
+        except:
+            return await message.reply("ใช้แบบ: topup 50")
+
+        user_path = f"users/{message.author.id}"
+        bal = ref.child(user_path + "/balance").get() or 0
+
+        ref.child(user_path).update({
+            "balance": bal + amount
+        })
+
+        await message.reply(f"เติมเงินสำเร็จ +{amount} บาท 💰")
+
+    await bot.process_commands(message)
+
 # ===== BOT =====
 bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
 
@@ -127,7 +147,7 @@ async def on_ready():
     global store_message_id
     print("ONLINE")
 
-    channel = bot.get_channel(SETUP_CHANNEL_ID)
+    channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
 
     # หา message เก่า
     async for msg in channel.history(limit=20):
@@ -151,17 +171,14 @@ async def on_ready():
 
     auto_update.start()
 
-# ===== AUTO UPDATE =====
+# ===== LOOP =====
 @tasks.loop(seconds=5)
 async def auto_update():
     try:
-        channel = bot.get_channel(SETUP_CHANNEL_ID)
+        channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
         msg = await channel.fetch_message(store_message_id)
 
-        await msg.edit(
-            embed=build_store_embed(),
-            view=StoreView()
-        )
+        await msg.edit(embed=build_store_embed(), view=StoreView())
     except Exception as e:
         print("Update Error:", e)
 
