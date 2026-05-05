@@ -6,12 +6,13 @@ from threading import Thread
 import os
 import json
 
-# --- 1. SETTINGS ---
+# --- SETTINGS ---
 TOKEN = os.getenv('TOKEN')
 DB_URL = 'https://bott-54e3e-default-rtdb.asia-southeast1.firebasedatabase.app/'
 FB_CONF = os.getenv('FIREBASE_CONFIG')
-ADMIN_LOG_ID = 1496076202509598720 
+ADMIN_LOG_ID = 1496076202509598720
 
+# --- FIREBASE INIT ---
 try:
     if not firebase_admin._apps:
         cred = credentials.Certificate(json.loads(FB_CONF))
@@ -20,31 +21,32 @@ try:
 except Exception as e:
     print('Firebase Error:', e)
 
-# --- 2. UI CLASSES ---
+# --- UI CLASSES ---
 
 class TopupModal(disnake.ui.Modal):
     def __init__(self):
         components = [
-            disnake.ui.TextInput(label='จำนวนเงิน', placeholder='เช่น 50', custom_id='amt'),
-            disnake.ui.TextInput(label='เวลาที่โอน', placeholder='เช่น 11:21', custom_id='time')
+            disnake.ui.TextInput(label='จำนวนเงิน', custom_id='amt'),
+            disnake.ui.TextInput(label='เวลาที่โอน', custom_id='time')
         ]
-        super().__init__(title='แจ้งเติมเงิน (SECXION)', custom_id='topup_modal_fixed', components=components)
+        super().__init__(title='แจ้งเติมเงิน', custom_id='topup_modal', components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         amt = inter.text_values['amt']
         time = inter.text_values['time']
         channel = inter.bot.get_channel(ADMIN_LOG_ID)
+
         if not channel:
-            return await inter.response.send_message('❌ ไม่พบห้องแอดมิน!', ephemeral=True)
+            return await inter.response.send_message('❌ ไม่พบห้องแอดมิน', ephemeral=True)
 
         emb = disnake.Embed(title='💰 แจ้งโอนเงิน', color=0xffff00)
-        emb.add_field(name='ผู้แจ้ง', value=inter.author.mention)
-        emb.add_field(name='ยอดเงิน', value=amt)
+        emb.add_field(name='ผู้ใช้', value=inter.author.mention)
+        emb.add_field(name='จำนวน', value=amt)
         emb.add_field(name='เวลา', value=time)
-        
-        view = AdminApproveView(inter.author.id, amt)
-        await channel.send(embed=emb, view=view)
-        await inter.response.send_message('✅ ส่งข้อมูลสำเร็จ', ephemeral=True)
+
+        await channel.send(embed=emb, view=AdminApproveView(inter.author.id, amt))
+        await inter.response.send_message('✅ แจ้งแล้ว', ephemeral=True)
+
 
 class AdminApproveView(disnake.ui.View):
     def __init__(self, user_id, amount):
@@ -52,94 +54,112 @@ class AdminApproveView(disnake.ui.View):
         self.user_id = str(user_id)
         self.amount = float(amount)
 
-    @disnake.ui.button(label='✅ อนุมัติ', style=disnake.ButtonStyle.green, custom_id='adm_app')
+    @disnake.ui.button(label='อนุมัติ', style=disnake.ButtonStyle.green)
     async def approve(self, button, inter: disnake.MessageInteraction):
         if not inter.author.guild_permissions.administrator:
-            return await inter.response.send_message('มึงไม่ใช่แอดมิน!', ephemeral=True)
-        curr = ref.child('users/' + self.user_id + '/balance').get() or 0
-        ref.child('users/' + self.user_id).update({'balance': curr + self.amount})
-        await inter.response.send_message('✅ เติมเงินสำเร็จ')
+            return await inter.response.send_message('Admin only', ephemeral=True)
+
+        bal = ref.child(f'users/{self.user_id}/balance').get() or 0
+        ref.child(f'users/{self.user_id}').update({'balance': bal + self.amount})
+
+        await inter.response.send_message('เติมเงินสำเร็จ')
         self.stop()
+
 
 class MainStoreView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.create_menu()
+        self.load_menu()
 
-    def create_menu(self):
-        stocks_data = ref.child('stocks').get() or {}
+    def load_menu(self):
+        stocks = ref.child('stocks').get() or {}
         options = []
-        for cat_name, items in stocks_data.items():
-            if not isinstance(items, dict): continue
-            real_items = [k for k in items.keys() if k != '_init']
-            if len(real_items) > 0:
-                options.append(disnake.SelectOption(label=cat_name.upper(), value=cat_name))
+
+        for cat, items in stocks.items():
+            if isinstance(items, dict):
+                real = [k for k in items if k != '_init']
+                if real:
+                    options.append(disnake.SelectOption(label=cat, value=cat))
 
         if not options:
-            options = [disnake.SelectOption(label='ไม่มีสินค้า', value='none')]
+            options.append(disnake.SelectOption(label='ไม่มีสินค้า', value='none'))
 
-        select = disnake.ui.Select(placeholder='🛒 เลือกสินค้า', custom_id='shop_select', options=options)
-        select.callback = self.shop_callback
+        select = disnake.ui.Select(
+            placeholder='เลือกสินค้า',
+            options=options
+        )
+        select.callback = self.buy_item
+
         self.clear_items()
-        self.add_item(disnake.ui.Button(label='💎 เติมเงิน', style=disnake.ButtonStyle.green, custom_id='btn_topup'))
+        self.add_item(disnake.ui.Button(label='เติมเงิน', custom_id='topup_btn'))
         self.add_item(select)
 
-    async def shop_callback(self, inter: disnake.MessageInteraction):
-        itype = inter.values[0]
-        if itype == 'none': return await inter.response.send_message('❌ ของหมด', ephemeral=True)
+    async def interaction_check(self, inter):
+        if inter.data.get("custom_id") == "topup_btn":
+            await inter.response.send_modal(TopupModal())
+            return False
+        return True
 
-        price = 50 
-        user_path = 'users/' + str(inter.author.id)
-        udata = ref.child(user_path).get() or {}
-        bal = udata.get('balance', 0)
-        
-        stocks = ref.child('stocks/' + itype).get() or {}
-        real_items = {k: v for k, v in stocks.items() if k != '_init'}
+    async def buy_item(self, inter: disnake.MessageInteraction):
+        cat = inter.values[0]
 
-        if not real_items: return await inter.response.send_message('❌ ของหมด!', ephemeral=True)
-        if bal < price: return await inter.response.send_message('❌ เงินไม่พอ!', ephemeral=True)
+        if cat == 'none':
+            return await inter.response.send_message('ของหมด', ephemeral=True)
 
-        iid = list(real_items.keys())[0]
-        detail = str(real_items[iid])
+        price = 50
+        user_path = f'users/{inter.author.id}'
+        user = ref.child(user_path).get() or {}
+        bal = user.get('balance', 0)
 
-        # หักเงินและลบของ
+        if bal < price:
+            return await inter.response.send_message('เงินไม่พอ', ephemeral=True)
+
+        items = ref.child(f'stocks/{cat}').get() or {}
+        real_items = {k: v for k, v in items.items() if k != '_init'}
+
+        if not real_items:
+            return await inter.response.send_message('ของหมด', ephemeral=True)
+
+        key = list(real_items.keys())[0]
+        detail = str(real_items[key])
+
+        # หักเงิน + ลบสินค้า
         ref.child(user_path).update({'balance': bal - price})
-        ref.child('stocks/' + itype + '/' + iid).delete()
+        ref.child(f'stocks/{cat}/{key}').delete()
 
-        # --- แก้ไขจุดที่พังบ่อยที่สุดให้เป็นแบบ 100% ---
+        # 🔥 FIX ERROR ตรงนี้
         try:
-            # ใช้การต่อ String แบบดั้งเดิม เลิกใช้ f-string ที่มี \n ข้างใน
-            code_block = '```\n' + detail + '\n
-```'
-            
-            embed_dm = disnake.Embed(title='📦 ซื้อสินค้าสำเร็จ', color=0x00ff00)
-            embed_dm.add_field(name='สินค้า', value=code_block, inline=False)
-            
-            await inter.author.send(embed=embed_dm)
-            res_msg = '✅ ส่งของเข้า DM เรียบร้อยแล้ว'
-        except:
-            res_msg = '⚠️ ทัก DM ไม่ได้! ของคือ: ' + detail
+            code_block = f"```\n{detail}\n```"
 
-        await inter.response.send_message(res_msg, ephemeral=True)
-        self.create_menu()
+            emb = disnake.Embed(title='ซื้อสำเร็จ', color=0x00ff00)
+            emb.add_field(name='สินค้า', value=code_block, inline=False)
+
+            await inter.author.send(embed=emb)
+            msg = 'ส่ง DM แล้ว'
+        except:
+            msg = f'DM ไม่ได้ ของคือ: {detail}'
+
+        await inter.response.send_message(msg, ephemeral=True)
+
+        self.load_menu()
         await inter.edit_original_message(view=self)
 
-# --- 3. BOT CORE ---
+
+# --- BOT ---
 bot = commands.Bot(command_prefix='!', intents=disnake.Intents.all())
 
 @bot.event
 async def on_ready():
     bot.add_view(MainStoreView())
-    print('🚀 บอทออนไลน์แล้ว!')
+    print('ONLINE')
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def setup(ctx):
-    await ctx.send(embed=disnake.Embed(title='🏪 SECXION STORE', color=0x2b2d31), view=MainStoreView())
+    await ctx.send('ร้านค้า', view=MainStoreView())
 
+
+# --- RUN ---
 if __name__ == '__main__':
     from server import run_web
-    t = Thread(target=run_web)
-    t.daemon = True
-    t.start()
+    Thread(target=run_web).start()
     bot.run(TOKEN)
