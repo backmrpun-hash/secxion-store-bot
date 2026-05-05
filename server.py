@@ -1,19 +1,28 @@
 from flask import Flask, render_template, request, redirect
-import firebase_admin
 from firebase_admin import db
 import os
 
 app = Flask(__name__)
 
-def run_web():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
+# หน้าแรก: ดึงสต็อกมาโชว์
 @app.route('/')
 def index():
-    users = db.reference('/users').get() or {}
-    return render_template('index.html', users=users)
+    stocks = db.reference('/stocks').get() or {}
+    return render_template('index.html', stocks=stocks)
 
-@app.route('/update_stock', methods=['POST'])
-def update_stock():
-    # โค้ดสำหรับเพิ่ม Stock ผ่านหน้าเว็บ
+# ระบบเพิ่ม Stock
+@app.route('/add_stock', methods=['POST'])
+def add_stock():
+    item_type = request.form.get('type')
+    detail = request.form.get('detail')
+    
+    if item_type and detail:
+        # ใช้ push() เพื่อสร้าง ID อัตโนมัติ ไม่ให้ข้อมูลทับกัน
+        db.reference(f'/stocks/{item_type}').push(detail)
+    
     return redirect('/')
+
+def run_web():
+    # Railway จะกำหนด PORT มาให้เอง ถ้าไม่มีจะใช้ 5000
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
