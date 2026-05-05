@@ -2,13 +2,17 @@ from flask import Flask, render_template, request, redirect
 from firebase_admin import db
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 
 # หน้าแรก: ดึงสต็อกมาโชว์
 @app.route('/')
 def index():
-    stocks = db.reference('/stocks').get() or {}
-    return render_template('index.html', stocks=stocks)
+    try:
+        stocks_data = db.reference('/stocks').get()
+        stocks = stocks_data if stocks_data else {}
+        return render_template('index.html', stocks=stocks)
+    except Exception as e:
+        return f"Error: {e}"
 
 # ระบบเพิ่ม Stock
 @app.route('/add_stock', methods=['POST'])
