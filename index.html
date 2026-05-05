@@ -2,44 +2,64 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>SECXION BULK MANAGER</title>
+    <title>SECXION ADVANCED MANAGER</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #0f0f0f; color: #e0e0e0; padding-top: 50px; }
-        .card { background-color: #1a1a1a; border: 1px solid #333; }
+        body { background-color: #0f0f0f; color: #e0e0e0; padding: 40px 0; }
+        .card { background-color: #1a1a1a; border: 1px solid #333; margin-bottom: 20px; }
         .form-control, .form-select { background-color: #252525; border: 1px solid #444; color: white; }
-        .form-control:focus { background-color: #2d2d2d; color: white; }
+        .form-control:focus { background-color: #2d2d2d; color: white; border-color: #0d6efd; }
+        .btn-danger { background-color: #dc354533; border: 1px solid #dc3545; color: #dc3545; }
+        .btn-danger:hover { background-color: #dc3545; color: white; }
     </style>
 </head>
 <body class="container">
-    <h2 class="text-center text-primary mb-4">📦 SECXION BULK STOCK</h2>
-    <div class="row justify-content-center">
+    <h2 class="text-center text-primary mb-4">🚀 SECXION ADVANCED STOCK</h2>
+
+    <div class="row">
+        <!-- ฝั่งตั้งค่าหมวดหมู่ -->
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h5>📁 จัดการหมวดหมู่</h5>
+                <form action="/add_category" method="POST" class="mb-3">
+                    <input type="text" name="cat_name" class="form-control mb-2" placeholder="ชื่อหมวดหมู่ใหม่" required>
+                    <button type="submit" class="btn btn-success w-100">สร้างหมวดหมู่</button>
+                </form>
+                <hr>
+                <h6>รายการหมวดหมู่:</h6>
+                <div class="list-group">
+                    {% for type in stocks.keys() %}
+                    <div class="list-group-item bg-transparent d-flex justify-content-between align-items-center border-secondary text-white">
+                        {{ type }}
+                        <form action="/del_category" method="POST" style="margin:0;">
+                            <input type="hidden" name="cat_name" value="{{ type }}">
+                            <button type="submit" class="btn btn-sm btn-danger">ลบ</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ฝั่งเพิ่มสินค้า -->
         <div class="col-md-8">
             <div class="card p-4">
+                <h5>📦 เพิ่มสินค้าเข้าระบบ (Bulk)</h5>
                 <form action="/add_stock" method="POST">
                     <div class="mb-3">
-                        <label class="form-label">เลือกประเภทสินค้า</label>
+                        <label class="form-label">เลือกหมวดหมู่</label>
                         <select name="type" class="form-select">
-                            <option value="netflix">Netflix</option>
-                            <option value="youtube">YouTube</option>
+                            {% for type in stocks.keys() %}
+                            <option value="{{ type }}">{{ type|upper }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">รายละเอียด (1 บรรทัด = 1 ชิ้น)</label>
-                        <textarea name="detail" class="form-control" rows="10" placeholder="user1:pass1&#10;user2:pass2" required></textarea>
+                        <textarea name="detail" class="form-control" rows="8" placeholder="ไอดี:พาส หรือ ลิงก์ดาวน์โหลด" required></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">บันทึกทั้งหมดเข้าสต็อก</button>
+                    <button type="submit" class="btn btn-primary w-100">บันทึกเข้าสต็อก</button>
                 </form>
-            </div>
-            <div class="mt-4 card p-3">
-                <h5>📊 สต็อกคงเหลือ:</h5>
-                <ul class="list-group list-group-flush">
-                    {% for type, items in stocks.items() %}
-                    <li class="list-group-item bg-transparent text-white d-flex justify-content-between">
-                        {{ type|upper }} <span>{{ items|length if items is mapping else 0 }} ชิ้น</span>
-                    </li>
-                    {% endfor %}
-                </ul>
             </div>
         </div>
     </div>
