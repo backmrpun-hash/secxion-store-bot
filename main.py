@@ -10,7 +10,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 # ลิงก์ Firebase ของคุณ
 FIREBASE_URL = "https://keyyss-6ec39-default-rtdb.asia-southeast1.firebasedatabase.app"
-CHANNEL_ID = 1501870139602108536
+CHANNEL_ID = 1501924015726395403
 
 intents = discord.Intents.default()
 intents.message_content = True
