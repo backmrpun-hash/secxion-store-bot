@@ -1,69 +1,108 @@
-import disnake
-from disnake.ext import commands, tasks
+import discord
+from discord.ext import commands
+import requests
+import os
 
-from config import TOKEN, SETUP_CHANNEL_ID
-from firebase import ref
-from store import build_embed, StoreView
-from topup import create_topup
+# --- CONFIGURATION ---
+TOKEN = 'MTUwMTkxNDk4NzkwNjcyODAyNw.G9rzIs.occokpqZsqShLWiF2X7b2VuGJmYnLCl-JBfrmI'
+FIREBASE_URL = "https://keyyss-6ec39-default-rtdb.asia-southeast1.firebasedatabase.app/keys"
+CHANNEL_ID = 1501870139602108536
+ID_FILE = "message_id.txt" # ไฟล์สำหรับจำว่าส่งข้อความไปที่ ID ไหนแล้ว
 
-bot = commands.Bot(command_prefix="!", intents=disnake.Intents.all())
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-store_message_id = None
+# --- UI ส่วนการกรอกคีย์ (Modal) ---
+class ResetKeyModal(discord.ui.Modal, title='Reset License HWID'):
+    license_key = discord.ui.TextInput(
+        label='License Key',
+        placeholder='BFS-XXXX-XXXX-XXXX',
+        required=True,
+        min_length=15
+    )
 
+    async def on_submit(self, interaction: discord.Interaction):
+        key = self.license_key.value.strip()
+        target_url = f"{FIREBASE_URL}/{key}.json"
 
-# ================= TOPUP =================
-@bot.command()
-async def topup(ctx, amount: int):
-    emb, _ = create_topup(amount, str(ctx.author.id))
-    await ctx.send(embed=emb)
+        try:
+            response = requests.get(target_url)
+            data = response.json()
 
+            if data is None:
+                return await interaction.response.send_message(f"❌ ไม่พบคีย์ `{key}` ในระบบ", ephemeral=True)
 
-# ================= CONFIRM =================
-@bot.command()
-async def confirm(ctx, ref_code: str):
-    data = ref.child(f"pending/{ref_code}").get()
+            if data.get('status') == "unused":
+                return await interaction.response.send_message(f"ℹ️ คีย์ `{key}` ยังไม่ได้ถูกใช้งาน", ephemeral=True)
 
-    if not data:
-        return await ctx.send("❌ ไม่พบรหัสอ้างอิง")
+            # รีเซ็ตค่าใน Firebase
+            update_data = {"status": "unused", "hwid": ""}
+            requests.patch(target_url, json=update_data)
 
-    if data["status"] != "pending":
-        return await ctx.send("❌ ถูกใช้ไปแล้ว")
+            embed = discord.Embed(title="✅ Reset Successful", color=discord.Color.green())
+            embed.description = f"คีย์ `{key}` ถูกล้าง HWID เรียบร้อยแล้ว\nคุณสามารถนำไปรันในเครื่องใหม่ได้ทันที"
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    user_id = data["user"]
-    amount = data["amount"]
+        except Exception as e:
+            await interaction.response.send_message(f"🆘 Error: {str(e)}", ephemeral=True)
 
-    bal = ref.child(f"users/{user_id}/balance").get() or 0
+# --- UI ส่วนของปุ่ม (View) ---
+class ResetKeyView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-    ref.child(f"users/{user_id}").update({
-        "balance": bal + amount
-    })
+    @discord.ui.button(label='Reset HWID (กดเพื่อรีเซ็ตคีย์)', style=discord.ButtonStyle.primary, custom_id='reset_btn_persistent')
+    async def reset_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ResetKeyModal())
 
-    ref.child(f"pending/{ref_code}").update({
-        "status": "paid"
-    })
-
-    await ctx.send(f"✅ เติมเงินสำเร็จ +{amount}")
-
-
-# ================= STORE =================
 @bot.event
 async def on_ready():
-    global store_message_id
+    print(f'Logged in as {bot.user.name}')
+    
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print("❌ ไม่พบ Channel ID ที่กำหนด!")
+        return
 
-    channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
-    msg = await channel.send(embed=build_embed(), view=StoreView())
+    # สร้าง Embed
+    embed = discord.Embed(
+        title="🔑 ระบบจัดการ License Key",
+        description="หากคุณต้องการเปลี่ยนเครื่อง หรือ HWID ไม่ตรง\nท่านสามารถรีเซ็ตได้ด้วยตนเองที่นี่",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="สถานะเซิร์ฟเวอร์", value="🟢 Online", inline=True)
+    embed.add_field(name="วิธีใช้งาน", value="กดปุ่มด้านล่างแล้วกรอก Key ของคุณ", inline=False)
+    embed.set_footer(text="ระบบจะทำการล้างข้อมูล HWID ทันทีหลังกดยืนยัน")
 
-    store_message_id = msg.id
-    auto_update.start()
+    view = ResetKeyView()
 
+    # ตรวจสอบว่าเคยส่งข้อความไปหรือยัง
+    msg_id = None
+    if os.path.exists(ID_FILE):
+        with open(ID_FILE, "r") as f:
+            msg_id = f.read().strip()
 
-@tasks.loop(seconds=10)
-async def auto_update():
-    channel = await bot.fetch_channel(SETUP_CHANNEL_ID)
-    msg = await channel.fetch_message(store_message_id)
+    if msg_id:
+        try:
+            # พยายามแก้ไขข้อความเดิม
+            old_msg = await channel.fetch_message(int(msg_id))
+            await old_msg.edit(embed=embed, view=view)
+            print("✅ อัปเดต Embed เดิมเรียบร้อยแล้ว")
+        except:
+            # ถ้าข้อความเดิมถูกลบไปแล้ว ให้ส่งใหม่
+            new_msg = await channel.send(embed=embed, view=view)
+            with open(ID_FILE, "w") as f:
+                f.write(str(new_msg.id))
+            print("⚠️ ไม่พบข้อความเดิม จึงส่งอันใหม่แทน")
+    else:
+        # ส่งครั้งแรก
+        new_msg = await channel.send(embed=embed, view=view)
+        with open(ID_FILE, "w") as f:
+            f.write(str(new_msg.id))
+        print("🆕 ส่ง Embed ครั้งแรกเรียบร้อยแล้ว")
 
-    await msg.edit(embed=build_embed(), view=StoreView())
+    # ลงทะเบียนปุ่มให้ทำงานได้ตลอดเวลาแม้รันใหม่
+    bot.add_view(ResetKeyView())
 
-
-# ================= RUN =================
 bot.run(TOKEN)
