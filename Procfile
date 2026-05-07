@@ -1,4 +1,4 @@
-worker: python bot.py
+worker: python main.py
     ```
 4.  **`serviceAccountKey.json`**: อัปโหลดไฟล์ที่โหลดมาจาก Firebase ลงไป (หาก Repo เป็น Private)
 
