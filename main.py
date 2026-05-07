@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
 load_dotenv()
+# ดึง Token จาก Environment (Railway Settings)
 TOKEN = os.getenv('DISCORD_TOKEN')
-# URL ของ Firebase ของคุณ
+# ลิงก์ Firebase ของคุณ
 FIREBASE_URL = "https://keyyss-6ec39-default-rtdb.asia-southeast1.firebasedatabase.app"
 CHANNEL_ID = 1501870139602108536
 
@@ -54,7 +55,7 @@ class ResetKeyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label='Reset HWID (กดเพื่อรีเซ็ตคีย์)', style=discord.ButtonStyle.primary, custom_id='reset_btn_railway')
+    @discord.ui.button(label='Reset HWID (กดเพื่อรีเซ็ตคีย์)', style=discord.ButtonStyle.primary, custom_id='reset_btn_railway_final')
     async def reset_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ResetKeyModal())
 
@@ -67,7 +68,6 @@ async def on_ready():
         print("❌ ไม่พบ Channel ID!")
         return
 
-    # สร้าง Embed
     embed = discord.Embed(
         title="🔑 ระบบจัดการ License Key",
         description="หากเปลี่ยนเครื่อง หรือ HWID ไม่ตรง\nท่านสามารถรีเซ็ตได้ด้วยตนเองที่นี่",
@@ -79,7 +79,7 @@ async def on_ready():
 
     view = ResetKeyView()
 
-    # ดึง Message ID จาก Firebase มาเช็คเพื่อ Edit แทนการส่งใหม่
+    # ดึง Message ID จาก Firebase มาเช็คเพื่อ Update แทนการส่งซ้ำ
     config_url = f"{FIREBASE_URL}/bot_config.json"
     try:
         config_data = requests.get(config_url).json()
@@ -89,15 +89,12 @@ async def on_ready():
             try:
                 old_msg = await channel.fetch_message(int(msg_id))
                 await old_msg.edit(embed=embed, view=view)
-                print("✅ อัปเดตข้อความเดิมเรียบร้อย")
             except:
                 new_msg = await channel.send(embed=embed, view=view)
                 requests.patch(config_url, json={"message_id": str(new_msg.id)})
-                print("🆕 ส่งข้อความใหม่ (อันเดิมหาย)")
         else:
             new_msg = await channel.send(embed=embed, view=view)
             requests.patch(config_url, json={"message_id": str(new_msg.id)})
-            print("🆕 ส่งข้อความครั้งแรก")
     except Exception as e:
         print(f"⚠️ Firebase Config Error: {e}")
 
