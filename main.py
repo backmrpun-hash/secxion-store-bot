@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # --- CONFIGURATION ---
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-# ดึงข้อมูลจากฐานข้อมูลเดิมของคุณ
+# URL ของ Firebase ของคุณ
 FIREBASE_URL = "https://keyyss-6ec39-default-rtdb.asia-southeast1.firebasedatabase.app"
 CHANNEL_ID = 1501870139602108536
 
@@ -79,7 +79,7 @@ async def on_ready():
 
     view = ResetKeyView()
 
-    # --- ส่วนที่แก้ให้รันบน Railway ได้ดีขึ้น (เก็บ ID ไว้บน Firebase) ---
+    # ดึง Message ID จาก Firebase มาเช็คเพื่อ Edit แทนการส่งใหม่
     config_url = f"{FIREBASE_URL}/bot_config.json"
     try:
         config_data = requests.get(config_url).json()
@@ -89,19 +89,18 @@ async def on_ready():
             try:
                 old_msg = await channel.fetch_message(int(msg_id))
                 await old_msg.edit(embed=embed, view=view)
-                print("✅ Updated existing Embed via Firebase ID")
+                print("✅ อัปเดตข้อความเดิมเรียบร้อย")
             except:
                 new_msg = await channel.send(embed=embed, view=view)
                 requests.patch(config_url, json={"message_id": str(new_msg.id)})
-                print("🆕 Sent new Embed (Old one deleted)")
+                print("🆕 ส่งข้อความใหม่ (อันเดิมหาย)")
         else:
             new_msg = await channel.send(embed=embed, view=view)
             requests.patch(config_url, json={"message_id": str(new_msg.id)})
-            print("🆕 Sent first Embed")
+            print("🆕 ส่งข้อความครั้งแรก")
     except Exception as e:
         print(f"⚠️ Firebase Config Error: {e}")
 
-    # ลงทะเบียนปุ่มให้ทำงานแบบถาวร
     bot.add_view(ResetKeyView())
 
 bot.run(TOKEN)
